@@ -902,7 +902,7 @@ extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str) {
 extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width) {
     Step step;
     step.type = STEP_WRAPPED_TEXT;
-    step.data.wraptext = { x, y, strdup(str), width };
+    step.data.wraptext = { x, y, strdup(str), float(width) };
     enqueue(step);
 }
 

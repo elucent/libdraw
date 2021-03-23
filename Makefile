@@ -50,7 +50,7 @@ libdraw.so: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
 libdraw.dll: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
 	${CXX} -fPIC -shared ${LDFLAGS} $^ -o $@ -lSOIL ${LDLIBS}
 	
-test/window: test/window.cpp $(LIBNAME)
+test/%: test/%.cpp $(LIBNAME)
 	$(CXX) $(CXXFLAGS) -Wl,-rpath=$$(pwd) -L. $< -o $@ -ldraw
 
 lib/GLAD/glad.o: lib/GLAD/glad.c
