@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
         log = subimage(sheet, 64, 0, 48, 48), smlog = subimage(sheet, 64, 48, 24, 32), bark = subimage(sheet, 64, 16, 48, 16);
     Image bg = image("asset/sunset.png"), imp = image("asset/imp.png"),
         temp = newimage(width(SCREEN), height(SCREEN)), temp2 = newimage(width(SCREEN), height(SCREEN));
+    Image fontimg = image("asset/font.png");
     float yaw = 0, pitch = 0;
     float x = 0, y = 8, z = 0;
     float pmx = 0, pmy = 0;
@@ -48,6 +49,7 @@ int main(int argc, char** argv) {
     color(GREEN);
     cube(64, 8, -32, 16, 16, 16, block);
     origin(CENTER);
+    font(fontimg);
     Model world = sketch();
     while (running()) {
         sprite(width(SCREEN) / 2, height(SCREEN) / 2, bg);
@@ -74,16 +76,23 @@ int main(int argc, char** argv) {
 
         beginstate();
             rotate(45, X_AXIS);
-            // rotate(frames() * 2, Y_AXIS);
-            // rotate(frames() * 1, Z_AXIS);
             translate(64, 16, -64);
             origin(CENTER);
-            hedron(0, 0, 0, 16, 16, 16, 48, 24, bark);
+            prism(0, 0, 0, 16, 16, 16, 32, X_AXIS, log);
             pyramid(0, 12, 0, 8, 16, 8, 32, DIR_UP, smlog);
             pyramid(0, -12, 0, 8, 16, 8, 32, DIR_DOWN, smlog);
             pyramid(0, 0, 12, 8, 8, 16, 32, DIR_BACK, smlog);
             pyramid(0, 0, -12, 8, 8, 16, 32, DIR_FRONT, smlog);
         endstate();
+
+        ortho(width(SCREEN), height(SCREEN));
+        snap(0, 0, 0);
+        color(BLACK);
+        wraptext(2, 3, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
+)", 128);
+        color(WHITE);
+        wraptext(2, 2, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
+)", 128);
     }
     return 0;
 }
