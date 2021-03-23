@@ -11,6 +11,9 @@ enum StepType {
     STEP_RECT,
     STEP_POLYGON,
     STEP_SPRITE,
+    STEP_FONT,
+    STEP_TEXT,
+    STEP_WRAPPED_TEXT,
     STEP_CUBE, 
     STEP_BOARD,
     STEP_PRISM,
@@ -37,6 +40,9 @@ struct Step {
         struct { float x, y, w, h; } rect;
         struct { float x, y, r; int n; } polygon;
         struct { float x, y, w, h; Image img; } sprite;
+        struct { Image img; } font;
+        struct { float x, y; const char* str; } text;
+        struct { float x, y; const char* str; float width; } wraptext;
         struct { float x, y, z, w, h, l; Image img; } cube;
         struct { float x, y, z, w, h, l; int n; Axis axis; Image img; } prism;
         struct { float x, y, z, w, h, l; int n; Direction dir; Image img; } cone;

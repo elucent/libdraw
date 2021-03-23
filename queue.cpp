@@ -19,6 +19,7 @@ static Model rendermodel;
 static bool invert = false;
 static float yaw = 0, pitch = 0, roll = 0;
 static float camerax = 0, cameray = 0, cameraz = 0;
+static Image currentfont;
 
 struct mat4 {
     float data[4][4];
@@ -160,12 +161,16 @@ static bool stateful(const Step& step) {
         case STEP_SET_COLOR:
         case STEP_SET_ORIGIN:
         case STEP_BEGIN:
+        case STEP_FONT:
             return false;
         case STEP_RECT:
         case STEP_POLYGON:
             return mode3d || texture != findimg(BLANK).id;
         case STEP_SPRITE:
             return mode3d || findimg(step.data.sprite.img).id != texture;
+        case STEP_TEXT:
+        case STEP_WRAPPED_TEXT:
+            return mode3d || findimg(currentfont).id != texture;
         case STEP_BOARD:
             return !mode3d || findimg(step.data.board.img).id != texture;
         case STEP_CUBE:
@@ -564,6 +569,67 @@ static void hedron(Buffer& buf, float x, float y, float z, float w, float h, flo
     }
 }
 
+static void text(Buffer& buf, float x, float y, const char* str, float width) {
+    bindtex(currentfont);
+    int iw = ::width(currentfont), ih = ::height(currentfont);
+    int cw = iw / 32, ch = ih / 32;
+    float ox = x, oy = y;
+    const char* reader = str;
+    const char* prevspace = str, *nextspace = str;
+    int length = strlen(str);
+    ImageMeta* meta = &findimg(currentfont);
+    while (meta->parent > 0) meta = &findimg(meta->parent);
+    while (*reader && reader - str < length) {
+        if (*reader == ' ' || *reader == '\t' || *reader == '\n') {
+            prevspace = reader;
+            nextspace = reader + 1;
+            while (*nextspace && *nextspace != ' ' && *nextspace != '\t' && *nextspace != '\n')
+                nextspace ++;
+        }
+        if (*reader == ' ') {
+            x += cw;
+            ++ reader;
+            continue;
+        }
+        if (*reader == '\t') {
+            do x += cw;
+            while ((int)round(x - ox) % (cw * 4) != 0);
+            ++ reader;
+            continue;
+        }
+        if (*reader == '\n') {
+            x = ox;
+            y += ch * 5 / 4;
+            ++ reader;
+            continue;
+        }
+
+        if (width >= 0 && (nextspace - prevspace) * cw <= width && x + (nextspace - reader) * cw + cw - ox > width) 
+            x = ox, y += ch * 5 / 4;
+        
+        buf.pos(x + cw * 3 / 2, y - ch / 2, 0); 
+        buf.pos(x - cw / 2, y - ch / 2, 0); 
+        buf.pos(x - cw / 2, y + ch * 3 / 2, 0);
+        buf.pos(x - cw / 2, y + ch * 3 / 2, 0); 
+        buf.pos(x + cw * 3 / 2, y + ch * 3 / 2, 0); 
+        buf.pos(x + cw * 3 / 2, y - ch / 2, 0);
+
+        int u = *reader % 16, v = *reader / 16;
+        float lu = float(u) * 0.0625, lv = float(v) * 0.0625;
+
+        for (int i = 0; i < 6; i ++)
+            buf.col(red, green, blue, alpha),
+            buf.norm(0, 0, -1),
+            buf.spr(float(meta->x) / meta->w, float(meta->y) / meta->h, float(iw) / meta->w, float(ih) / meta->h);
+
+        buf.uv(lu + 0.0625, lv); buf.uv(lu, lv); buf.uv(lu, lv + 0.0625);
+        buf.uv(lu, lv + 0.0625); buf.uv(lu + 0.0625, lv + 0.0625); buf.uv(lu + 0.0625, lv);
+
+        x += cw;
+        ++ reader;
+    }
+}
+
 void ensure2d() {
     if (mode3d) {
         mode3d = false;
@@ -623,6 +689,24 @@ static void step(Buffer& buf, const Step& step) {
             ensure2d();
             auto& r = step.data.sprite;
             return plane(buf, r.x, r.y, 0, r.w, r.h, 1, 0, 0, 0, 1, 0, r.img);
+        }
+        case STEP_FONT: {
+            currentfont = step.data.font.img;
+            return;
+        }
+        case STEP_TEXT: {
+            ensure2d();
+            auto& t = step.data.text;
+            text(buf, t.x, t.y, t.str, -1);
+            delete[] t.str;
+            return;
+        }
+        case STEP_WRAPPED_TEXT: {
+            ensure2d();
+            auto& t  = step.data.wraptext;
+            text(buf, t.x, t.y, t.str, t.width);
+            delete[] t.str;
+            return;
         }
         case STEP_CUBE: {
             ensure3d();
@@ -801,9 +885,26 @@ void stretched_sprite(float x, float y, float w, float h, Image img) {
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(font)(Image i);
-extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str);
-extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width);
+extern "C" void LIBDRAW_SYMBOL(font)(Image i) {
+    Step step;
+    step.type = STEP_FONT;
+    step.data.font = { i };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str) {
+    Step step;
+    step.type = STEP_TEXT;
+    step.data.text = { x, y, strdup(str) };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width) {
+    Step step;
+    step.type = STEP_WRAPPED_TEXT;
+    step.data.wraptext = { x, y, strdup(str), width };
+    enqueue(step);
+}
 
 // 3D Drawing
 
@@ -820,9 +921,6 @@ extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img) {
     step.data.board = { x, y, z, (float)width(img), (float)height(img), img };
     enqueue(step);
 }
-
-extern "C" void LIBDRAW_SYMBOL(wall)(float x1, float y1, float z1, float x2, float y2, float z2, Image img);
-extern "C" void LIBDRAW_SYMBOL(ground)(float x, float y, float z, float w, float h, float l, Image img);
 
 extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Image img) {
     Step step;
