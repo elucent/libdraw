@@ -817,7 +817,7 @@ extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h
 extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img) {
     Step step;
     step.type = STEP_BOARD;
-    step.data.board = { x, y, z, width(img), height(img), img };
+    step.data.board = { x, y, z, (float)width(img), (float)height(img), img };
     enqueue(step);
 }
 

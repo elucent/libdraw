@@ -1,5 +1,8 @@
 .vscode/
 *.o
 *.dll
+*.so
 *.a
 *.exe
+test/*
+!test/*.cpp

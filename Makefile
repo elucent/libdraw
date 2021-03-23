@@ -20,16 +20,19 @@ endif
 
 ifeq (${OS}, Linux)
 	LDLIBS := -lglfw -lGL -ldl
+	LIBNAME := libdraw.so
 endif
 
 ifeq (${OS}, MSYS)
 	LDLIBS := -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lglfw3
 	LDFLAGS += -static -static-libgcc -static-libstdc++ -L/mingw64/lib 
+	LIBNAME := libdraw.dll
 endif
 
 ifeq (${OS}, MinGW)
 	LDLIBS := -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lglfw3
 	LDFLAGS += -static -static-libgcc -static-libstdc++ -L/mingw64/lib 
+	LIBNAME := libdraw.dll
 endif
 
 clean:
@@ -47,7 +50,7 @@ libdraw.so: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
 libdraw.dll: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
 	${CXX} -fPIC -shared ${LDFLAGS} $^ -o $@ -lSOIL ${LDLIBS}
 	
-test/window: test/window.cpp libdraw.dll
+test/window: test/window.cpp $(LIBNAME)
 	$(CXX) $(CXXFLAGS) -Wl,-rpath=$$(pwd) -L. $< -o $@ -ldraw
 
 lib/GLAD/glad.o: lib/GLAD/glad.c
