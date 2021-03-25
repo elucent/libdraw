@@ -13,7 +13,7 @@ static Origin orig;
 float projection[4][4], view[4][4], transform[4][4];
 static float pi = 3.14159265358979323f;
 static float red = 1, green = 1, blue = 1, alpha = 1;
-static float lightx = -0.329293, lighty = -0.76835, lightz = -0.548821;
+static float lightx = 0.218218, lighty = -0.872872, lightz = 0.436436;
 static bool mode3d = false;
 static Model rendermodel;
 static bool invert = false;

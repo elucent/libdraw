@@ -10,7 +10,7 @@ Image wall, ground, ceiling, pillar;
 float x = 0, y = 8, z = 0;
 
 bool at(bool* b, int i, int j) {
-    if (i < 0 || j < 0 || i >= BOARD_DIM || j >= BOARD_DIM) return true;
+    if (i <= 0 || j <= 0 || i >= BOARD_DIM - 1 || j >= BOARD_DIM - 1) return true;
     return b[i * BOARD_DIM + j];
 }
 
@@ -22,6 +22,13 @@ int neighbors(bool* b, int i, int j) {
         }
     }
     return sum;
+}
+
+int adjacent(bool* b, int i, int j) {
+    return (at(b, i - 1, j) ? 1 : 0)
+        + (at(b, i + 1, j) ? 1 : 0)
+        + (at(b, i, j - 1) ? 1 : 0)
+        + (at(b, i, j + 1) ? 1 : 0);
 }
 
 void generate() {
@@ -36,13 +43,12 @@ void generate() {
     }
 
     // clear out caverns
-    for (int k = 0; k < 4; k ++) { 
+    for (int k = 0; k < 3; k ++) { 
         for (int i = 0; i < BOARD_DIM; i ++) {
             for (int j = 0; j < BOARD_DIM; j ++) {
                 int n = neighbors(src, i, j) + rand() % 2;
-                if (n < 4) dst[i * BOARD_DIM + j] = false;
-                else if (n > 7) dst[i * BOARD_DIM + j] = true;
-                else dst[i * BOARD_DIM + j] = rand() % 2;
+                if (n < 6) dst[i * BOARD_DIM + j] = false;
+                else if (n > 5) dst[i * BOARD_DIM + j] = true;
             }
         }
         bool* temp = src;
@@ -54,22 +60,31 @@ void generate() {
     for (int i = 0; i < BOARD_DIM; i ++) {
         for (int j = 0; j < BOARD_DIM; j ++) {
             if (src[i * BOARD_DIM + j]) {
-                if (!at(src, i - 1, j) && !at(src, i, j - 1)
-                    && !at(src, i + 1, j) && !at(src, i, j + 1)) {
+                int n = adjacent(src, i, j);
+                if (n == 0) {
                     cube(i * 16, -16, j * 16, 16, 16, 16, ground);
                     cube(i * 16, 32, j * 16, 16, 16, 16, ceiling);
                     prism(i * 16 + 2, 0, j * 16 + 2, 12, 32, 12, 5, Y_AXIS, pillar);
+                    src[i * BOARD_DIM + j] = false;
                 }
-                else cube(i * 16, 0, j * 16, 16, 32, 16, wall);
+                else {
+                    cube(i * 16, 0, j * 16, 16, 32, 16, wall);
+                }
             }
             else {
                 cube(i * 16, -16, j * 16, 16, 16, 16, ground);
                 cube(i * 16, 32, j * 16, 16, 16, 16, ceiling);
+                x = i * 16 + 8, z = j * 16 + 8;
+            }
+        }
+    }
+    for (int i = 0; i < BOARD_DIM; i ++) {
+        for (int j = 0; j < BOARD_DIM; j ++) {
+            if (!at(src, i, j)) {
                 if (at(src, i - 1, j) && at(src, i, j - 1)) slant(i * 16, 0, j * 16, 16, 32, 16, FRONT_LEFT_EDGE, wall);
                 if (at(src, i + 1, j) && at(src, i, j - 1)) slant(i * 16, 0, j * 16, 16, 32, 16, FRONT_RIGHT_EDGE, wall);
                 if (at(src, i + 1, j) && at(src, i, j + 1)) slant(i * 16, 0, j * 16, 16, 32, 16, BACK_RIGHT_EDGE, wall);
                 if (at(src, i - 1, j) && at(src, i, j + 1)) slant(i * 16, 0, j * 16, 16, 32, 16, BACK_LEFT_EDGE, wall);
-                x = i * 16 + 8, z = j * 16 + 8;
             }
         }
     }
@@ -77,7 +92,7 @@ void generate() {
 
 int main(int argc, char** argv) {
     srand(0);
-    window(240, 160, "Cave Explorer");
+    window(960, 640, "Cave Explorer");
     Image sheet = image("asset/cavern_sheet.png");
     wall = subimage(sheet, 0, 0, 96, 80), ground = subimage(sheet, 144, 0, 64, 48), ceiling = subimage(sheet, 80, 0, 64, 48), pillar = subimage(sheet, 48, 48, 36, 56);
     float yaw = 0, pitch = 0;
