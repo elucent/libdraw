@@ -96,6 +96,21 @@ enum Direction {
     LIBDRAW_CONST(DIR_BACK) = 5
 };
 
+enum Edge {
+    LIBDRAW_CONST(TOP_LEFT_EDGE) = 0,
+    LIBDRAW_CONST(TOP_BACK_EDGE) = 1,
+    LIBDRAW_CONST(TOP_RIGHT_EDGE) = 2,
+    LIBDRAW_CONST(TOP_FRONT_EDGE) = 3,
+    LIBDRAW_CONST(BACK_LEFT_EDGE) = 4,
+    LIBDRAW_CONST(BACK_RIGHT_EDGE) = 5,
+    LIBDRAW_CONST(FRONT_RIGHT_EDGE) = 6,
+    LIBDRAW_CONST(FRONT_LEFT_EDGE) = 7,
+    LIBDRAW_CONST(BOTTOM_LEFT_EDGE) = 8,
+    LIBDRAW_CONST(BOTTOM_BACK_EDGE) = 9,
+    LIBDRAW_CONST(BOTTOM_RIGHT_EDGE) = 10,
+    LIBDRAW_CONST(BOTTOM_FRONT_EDGE) = 11
+};
+
 extern "C" void LIBDRAW_SYMBOL(origin)(Origin origin);
 extern "C" void LIBDRAW_SYMBOL(rotate)(float degrees, Axis axis);
 extern "C" void LIBDRAW_SYMBOL(translate)(float dx, float dy, float dz);
@@ -109,8 +124,7 @@ extern "C" void LIBDRAW_SYMBOL(endstate)();
 
 extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Image img);
 extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img);
-extern "C" void LIBDRAW_SYMBOL(wall)(float x1, float y1, float z1, float x2, float y2, float z2, Image img);
-extern "C" void LIBDRAW_SYMBOL(ground)(float x, float y, float z, float w, float h, float l, Image img);
+extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Image img);
 extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Image img);
 extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Image img);
 extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Image img);

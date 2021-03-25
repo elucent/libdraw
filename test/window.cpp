@@ -44,10 +44,25 @@ int main(int argc, char** argv) {
     for (int i = -10; i < 10; i ++) for (int j = -10; j < 10; j ++)
         if ((i - j) % 2 == 0) cube(i * 16, -16, j * 16, 16, 16, 16, block);
         else cube(i * 16, -16, j * 16, 16, 8, 16, slab);
-    color(RED);
-    cube(-64, 8, -32, 16, 16, 16, block);
-    color(GREEN);
-    cube(64, 8, -32, 16, 16, 16, block);
+    slant(64, 0, -32, 16, 16, 16, TOP_LEFT_EDGE, block);
+    slant(80, 0, -16, 16, 16, 16, TOP_BACK_EDGE, block);
+    slant(96, 0, -32, 16, 16, 16, TOP_RIGHT_EDGE, block);
+    slant(80, 0, -48, 16, 16, 16, TOP_FRONT_EDGE, block);
+    slant(64, 0, -96, 16, 16, 16, BOTTOM_LEFT_EDGE, block);
+    slant(80, 0, -80, 16, 16, 16, BOTTOM_BACK_EDGE, block);
+    slant(96, 0, -96, 16, 16, 16, BOTTOM_RIGHT_EDGE, block);
+    slant(80, 0, -112, 16, 16, 16, BOTTOM_FRONT_EDGE, block);
+    slant(64, -4, 32, 16, 8, 16, FRONT_LEFT_EDGE, slab);
+    slant(64, 12, 32, 16, 8, 16, FRONT_LEFT_EDGE, slab);
+    slant(96, -4, 32, 16, 8, 16, FRONT_RIGHT_EDGE, slab);
+    slant(96, 12, 32, 16, 8, 16, FRONT_RIGHT_EDGE, slab);
+    slant(96, -4, 64, 16, 8, 16, BACK_RIGHT_EDGE, slab);
+    slant(96, 12, 64, 16, 8, 16, BACK_RIGHT_EDGE, slab);
+    slant(64, -4, 64, 16, 8, 16, BACK_LEFT_EDGE, slab);
+    slant(64, 12, 64, 16, 8, 16, BACK_LEFT_EDGE, slab);
+    // slant(80, 0, 48, 16, 16, 16, BOTTOM_BACK_EDGE, block);
+    // slant(96, 0, 32, 16, 16, 16, BOTTOM_RIGHT_EDGE, block);
+    // slant(80, 0, 16, 16, 16, 16, BOTTOM_FRONT_EDGE, block);
     origin(CENTER);
     font(fontimg);
     Model world = sketch();
@@ -87,12 +102,12 @@ int main(int argc, char** argv) {
 
         ortho(width(SCREEN), height(SCREEN));
         snap(0, 0, 0);
-        color(BLACK);
-        wraptext(2, 3, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
-)", 128);
-        color(WHITE);
-        wraptext(2, 2, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
-)", 128);
+//         color(BLACK);
+//         wraptext(2, 3, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
+// )", 128);
+//         color(WHITE);
+//         wraptext(2, 2, R"(ABC DEF GHI JKL MNO PQR STU VWX YZ  abc def ghi jkl mno pqr stu vwx yz  .!? :;, The Quick Brown Fox Jumped Over The Lazy Dog.
+// )", 128);
     }
     return 0;
 }

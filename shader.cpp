@@ -27,7 +27,7 @@ const char* LIBDRAW_CONST(DEFAULT_VSH) = R"(
 
     void main() {
         gl_Position = projection * view * model * vec4(pos, 1);
-        float bright = (dot(light, normalize(mat3(model) * norm)) + 1) * 0.375 + 0.25;
+        float bright = (-dot(light, normalize(mat3(model) * norm)) + 1) * 0.375 + 0.25;
         v_col = vec4(bright * col.rgb, col.a);
         v_uv = uv;
         v_spr = spr;

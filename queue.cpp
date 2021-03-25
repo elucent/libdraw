@@ -13,7 +13,7 @@ static Origin orig;
 float projection[4][4], view[4][4], transform[4][4];
 static float pi = 3.14159265358979323f;
 static float red = 1, green = 1, blue = 1, alpha = 1;
-static float lightx = 0.329293, lighty = 0.76835, lightz = 0.548821;
+static float lightx = -0.329293, lighty = -0.76835, lightz = -0.548821;
 static bool mode3d = false;
 static Model rendermodel;
 static bool invert = false;
@@ -175,6 +175,8 @@ static bool stateful(const Step& step) {
             return !mode3d || findimg(step.data.board.img).id != texture;
         case STEP_CUBE:
             return !mode3d || findimg(step.data.cube.img).id != texture;
+        case STEP_SLANT:
+            return !mode3d || findimg(step.data.slant.img).id != texture;
         case STEP_PRISM:
             return !mode3d || findimg(step.data.prism.img).id != texture;
         case STEP_CONE:
@@ -246,6 +248,15 @@ static void scaleduv(Buffer& buf, float u, float v, float w, float h, float iw, 
     buf.uv((u + w) / iw, (v + h) / ih);
 }
 
+static void scaleduvx(Buffer& buf, float u, float v, float w, float h, float iw, float ih) {
+    buf.uv((u + w) / iw, (v + h) / ih);
+    buf.uv((u + w) / iw, (v) / ih);
+    buf.uv((u) / iw, (v) / ih);
+    buf.uv((u) / iw, (v) / ih);
+    buf.uv((u) / iw, (v + h) / ih);
+    buf.uv((u + w) / iw, (v + h) / ih);
+}
+
 static void polygon(Buffer& buf, float x, float y, float r, float n) {
     bindtex(BLANK);
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1;
@@ -306,12 +317,12 @@ static void cube(Buffer& buf, float x, float y, float z, float w, float h, float
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
-    scaleduv(buf, h, h, w, -h, iw, ih); // negative x
-    scaleduv(buf, h, h + w, w, h, iw, ih); // positive x
-    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+    scaleduv(buf, h * 2 + l, h, w, l, iw, ih); // negative y
     scaleduv(buf, h, h, w, l, iw, ih); // positive y
-    scaleduv(buf, h, h, w, -h, iw, ih); // negative z
-    scaleduv(buf, h, h + l, w, h, iw, ih); // positive z
+    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
     
     for (int i = 0; i < 36; i ++) buf.spr(u, v, uw, vh);
 }
@@ -630,10 +641,417 @@ static void text(Buffer& buf, float x, float y, const char* str, float width) {
     }
 }
 
+static void normalize(float& x, float& y, float& z) {
+    float len = sqrt(x * x + y * y + z * z);
+    x /= len, y /= len, z /= len;
+}
+
+static void scaleduvtri(Buffer& buf, float u, float v, float w, float h, float iw, float ih, bool flipu, bool flipv) {
+    if (flipu || flipv) buf.uv((u) / iw, (v + h) / ih);
+    if (flipu || !flipv) buf.uv((u) / iw, (v) / ih);
+    if (!flipu || !flipv) buf.uv((u + w) / iw, (v) / ih);
+    if (!flipu || flipv) buf.uv((u + w) / iw, (v + h) / ih);
+}
+
+static void scaleduvxtri(Buffer& buf, float u, float v, float w, float h, float iw, float ih, bool flipu, bool flipv) {
+    if (flipu || flipv) buf.uv((u + w) / iw, (v) / ih);
+    if (flipu || !flipv) buf.uv((u) / iw, (v) / ih);
+    if (!flipu || !flipv) buf.uv((u) / iw, (v + h) / ih);
+    if (!flipu || flipv) buf.uv((u + w) / iw, (v + h) / ih);
+}
+
+static void slant(Buffer& buf, float x, float y, float z, float w, float h, float l, Edge edge, Image i) {
+    bindtex(i);
+    ImageMeta* meta = &findimg(i);
+    while (meta->parent > 0) meta = &findimg(meta->parent);
+    float dx = w / 2, dy = h / 2, dz = l / 2;
+    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
+    float iw = float(findimg(i).w), ih = float(findimg(i).h);
+    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
+    float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
+    x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
+
+    float nx = 0, ny = 0, nz = 0;
+
+    switch (edge) {
+        case TOP_LEFT_EDGE: {
+            float hx = dx * 2, hy = dy * 2, hz = 0;
+            float vx = 0, vy = 0, vz = dz * -2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case TOP_BACK_EDGE: {
+            float hx = dx * 2, hy = 0, hz = 0;
+            float vx = 0, vy = dy * 2, vz = dz * -2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case TOP_RIGHT_EDGE: {
+            float hx = dx * 2, hy = dy * -2, hz = 0;
+            float vx = 0, vy = 0, vz = dz * -2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case TOP_FRONT_EDGE: {
+            float hx = dx * 2, hy = 0, hz = 0;
+            float vx = 0, vy = dy * -2, vz = dz * -2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case FRONT_LEFT_EDGE: {
+            float hx = dx * 2, hy = 0, hz = dz * -2;
+            float vx = 0, vy = dy * -2, vz = 0;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case FRONT_RIGHT_EDGE: {
+            float hx = dx * -2, hy = 0, hz = dz * -2;
+            float vx = 0, vy = dy * -2, vz = 0;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BACK_RIGHT_EDGE: {
+            float hx = dx * -2, hy = 0, hz = dz * 2;
+            float vx = 0, vy = dy * -2, vz = 0;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BACK_LEFT_EDGE: {
+            float hx = dx * -2, hy = 0, hz = dz * 2;
+            float vx = 0, vy = dy * -2, vz = 0;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BOTTOM_LEFT_EDGE: {
+            float hx = dx * 2, hy = dy * 2, hz = 0;
+            float vx = 0, vy = 0, vz = dz * 2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BOTTOM_BACK_EDGE: {
+            float hx = dx * 2, hy = 0, hz = 0;
+            float vx = 0, vy = dy * 2, vz = dz * 2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BOTTOM_RIGHT_EDGE: {
+            float hx = dx * 2, hy = dy * -2, hz = 0;
+            float vx = 0, vy = 0, vz = dz * 2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+        case BOTTOM_FRONT_EDGE: {
+            float hx = dx * 2, hy = 0, hz = 0;
+            float vx = 0, vy = dy * -2, vz = dz * 2;
+            nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
+            break;
+        }
+    }
+    normalize(nx, ny, nz);
+    bool cullX = w < l + (edge % 2);
+
+    switch (edge) {
+        case TOP_LEFT_EDGE: {
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // ny
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // nz
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // pz
+            for (int i = 0; i < 6; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
+            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, false);
+            scaleduvtri(buf, h, h + l, l, h, iw, ih, false, false);
+            break;
+        }
+        case TOP_BACK_EDGE: {
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); // nx
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // px
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // ny
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
+            scaleduvxtri(buf, h, h, -h, w, iw, ih, true, false);
+            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, false);
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case TOP_RIGHT_EDGE: {
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz); 
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // nz
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // pz
+            for (int i = 0; i < 6; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
+            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, false);
+            scaleduvtri(buf, h, h + l, l, h, iw, ih, true, false);
+            break;
+        }
+        case TOP_FRONT_EDGE: {
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz); // nx
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); // px
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
+            scaleduvxtri(buf, h, h, -h, w, iw, ih, false, false);
+            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, false);
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            break;
+        }
+        case FRONT_LEFT_EDGE: {    
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            if (!cullX) {
+                buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
+                buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            }
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); // ny
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // py
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            if (cullX) {
+                buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // pz
+                buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            }
+            for (int i = 0; i < 6; i ++) buf.norm(-1, 0, 0);
+            if (!cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 3; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
+            if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+
+            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, true); // negative y
+            scaleduvtri(buf, h, h, w, l, iw, ih, false, true); // positive y
+            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case FRONT_RIGHT_EDGE: {    
+            if (!cullX) {
+                buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // nx
+                buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            }
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); // ny
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // py
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            if (cullX) {
+                buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
+                buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            }
+            
+            if (!cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
+            if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+
+            if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, false); // negative y
+            scaleduvtri(buf, h, h, w, l, iw, ih, false, false); // positive y
+            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case BACK_RIGHT_EDGE: {    
+            if (!cullX) {
+                buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
+                buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            }
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // ny
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); // py
+            if (cullX) {
+                buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nz
+                buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            }
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            
+            if (!cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 1, 0);
+            if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
+
+            if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, false); // negative y
+            scaleduvtri(buf, h, h, w, l, iw, ih, true, false); // positive y
+            if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case BACK_LEFT_EDGE: {    
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            if (!cullX) {
+                buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // px
+                buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            }
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // ny
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); // py
+            if (cullX) {
+                buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
+                buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            }
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            
+            for (int i = 0; i < 6; i ++) buf.norm(-1, 0, 0);
+            if (!cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 3; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 1, 0);
+            if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
+
+            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, true); // negative y
+            scaleduvtri(buf, h, h, w, l, iw, ih, true, true); // positive y
+            if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case BOTTOM_LEFT_EDGE: {
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // py
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // nz
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // pz
+            for (int i = 0; i < 6; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
+            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, true);
+            scaleduvtri(buf, h, h + l, l, h, iw, ih, false, true);
+            break;
+        }
+        case BOTTOM_BACK_EDGE: {
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z - dz); // nx
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // px
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
+            scaleduvxtri(buf, h, h, -h, w, iw, ih, true, true);
+            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, true);
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        }
+        case BOTTOM_RIGHT_EDGE: {
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
+            buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // nz
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // pz
+            for (int i = 0; i < 6; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
+            for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
+            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, true);
+            scaleduvtri(buf, h, h + l, l, h, iw, ih, true, true);
+            break;
+        }
+        case BOTTOM_FRONT_EDGE: {
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz); // nx
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z + dz); // px
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // py
+            buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
+            buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
+            for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
+            for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
+            scaleduvxtri(buf, h, h, -h, w, iw, ih, false, true);
+            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, true);
+            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            break;
+        }
+    }
+
+    for (int i = 0; i < 24; i ++) buf.col(red, green, blue, alpha);
+    for (int i = 0; i < 24; i ++) buf.spr(u, v, uw, vh);
+}
+
 void ensure2d() {
     if (mode3d) {
         mode3d = false;
-        glUniform3f(find_uniform("light"), 0, 0, -1);
+        glUniform3f(find_uniform("light"), 0, 0, 1);
         glDepthMask(GL_FALSE);
     }
 }
@@ -717,6 +1135,11 @@ static void step(Buffer& buf, const Step& step) {
             ensure3d();
             auto& b = step.data.board;
             return plane(buf, b.x, b.y, b.z, b.w, b.h, boardh[0], boardh[1], boardh[2], boardv[0], boardv[1], boardv[2], b.img);
+        }
+        case STEP_SLANT: {
+            ensure3d();
+            auto& c = step.data.slant;
+            return slant(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.edge, c.img);
         }
         case STEP_PRISM: {
             ensure3d();
@@ -922,6 +1345,13 @@ extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img) {
     enqueue(step);
 }
 
+extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Image img) {
+    Step step;
+    step.type = STEP_SLANT;
+    step.data.slant = { x, y, z, w, h, l, edge, img };
+    enqueue(step);
+}
+
 extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Image img) {
     Step step;
     step.type = STEP_PRISM;
@@ -1112,7 +1542,7 @@ extern "C" void LIBDRAW_SYMBOL(render)(Model model, Image img) {
 void apply_default_uniforms() {
     glUniform1i(find_uniform("width"), width(currentfbo()));
     glUniform1i(find_uniform("height"), height(currentfbo()));
-    mode3d ? glUniform3f(find_uniform("light"), lightx, lighty, lightz) : glUniform3f(find_uniform("light"), 0, 0, -1);
+    mode3d ? glUniform3f(find_uniform("light"), lightx, lighty, lightz) : glUniform3f(find_uniform("light"), 0, 0, 1);
     glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
     glUniformMatrix4fv(find_uniform("view"), 1, GL_FALSE, (const GLfloat*)view);
     glUniformMatrix4fv(find_uniform("model"), 1, GL_FALSE, (const GLfloat*)transform);
