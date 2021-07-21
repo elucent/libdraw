@@ -4,6 +4,7 @@
 #include "draw.h"
 
 extern float projection[4][4], view[4][4], transform[4][4];
+extern bool invert;
 
 enum StepType {
     STEP_SET_COLOR,
@@ -30,6 +31,7 @@ enum StepType {
     STEP_TRANSLATE,
     STEP_RENDER,
     STEP_BEGIN,
+    STEP_FOG,
     STEP_END
 };
 
@@ -44,11 +46,11 @@ struct Step {
         struct { Image img; } font;
         struct { float x, y; const char* str; } text;
         struct { float x, y; const char* str; float width; } wraptext;
-        struct { float x, y, z, w, h, l; Image img; } cube;
-        struct { float x, y, z, w, h, l; Edge edge; Image img; } slant;
-        struct { float x, y, z, w, h, l; int n; Axis axis; Image img; } prism;
-        struct { float x, y, z, w, h, l; int n; Direction dir; Image img; } cone;
-        struct { float x, y, z, w, h, l; int m, n; Image img; } hedron;
+        struct { float x, y, z, w, h, l; Texture tex; } cube;
+        struct { float x, y, z, w, h, l; Edge edge; Texture tex; } slant;
+        struct { float x, y, z, w, h, l; int n; Axis axis; Texture tex; } prism;
+        struct { float x, y, z, w, h, l; int n; Direction dir; Texture tex; } cone;
+        struct { float x, y, z, w, h, l; int m, n; Texture tex; } hedron;
         struct { float x, y, z, w, h; Image img; } board;
         struct { float w, h; } ortho;
         struct { float w, h, fov; } frustum;
@@ -59,6 +61,7 @@ struct Step {
         struct { float x, y, z; } scale;
         struct { float x, y, z; } translate;
         struct { Model model; Image img; } render;
+        struct { Color color; float range; } fog;
     } data;
 };
 

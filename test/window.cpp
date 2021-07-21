@@ -33,7 +33,8 @@ int main(int argc, char** argv) {
     window(240, 160, "My Window");
     Shader outline = shader(DEFAULT_VSH, OUTLINE_FSH);
     Image sheet = image("asset/grass.png"), block = subimage(sheet, 0, 32, 64, 48), slab = subimage(sheet, 0, 0, 48, 32), 
-        log = subimage(sheet, 64, 0, 48, 48), smlog = subimage(sheet, 64, 48, 24, 32), bark = subimage(sheet, 64, 16, 48, 16);
+        log = subimage(sheet, 64, 0, 48, 48), smlog = subimage(sheet, 64, 48, 24, 32), bark = subimage(sheet, 64, 16, 48, 16),
+        brick = subimage(sheet, 0, 80, 16, 16);
     Image bg = image("asset/sunset.png"), imp = image("asset/imp.png"),
         temp = newimage(width(SCREEN), height(SCREEN)), temp2 = newimage(width(SCREEN), height(SCREEN));
     Image fontimg = image("asset/font.png");
@@ -42,24 +43,27 @@ int main(int argc, char** argv) {
     float pmx = 0, pmy = 0;
     origin(FRONT_TOP_LEFT);
     for (int i = -10; i < 10; i ++) for (int j = -10; j < 10; j ++)
-        if ((i - j) % 2 == 0) cube(i * 16, -16, j * 16, 16, 16, 16, block);
-        else cube(i * 16, -16, j * 16, 16, 8, 16, slab);
-    slant(64, 0, -32, 16, 16, 16, TOP_LEFT_EDGE, block);
-    slant(80, 0, -16, 16, 16, 16, TOP_BACK_EDGE, block);
-    slant(96, 0, -32, 16, 16, 16, TOP_RIGHT_EDGE, block);
-    slant(80, 0, -48, 16, 16, 16, TOP_FRONT_EDGE, block);
-    slant(64, 0, -96, 16, 16, 16, BOTTOM_LEFT_EDGE, block);
-    slant(80, 0, -80, 16, 16, 16, BOTTOM_BACK_EDGE, block);
-    slant(96, 0, -96, 16, 16, 16, BOTTOM_RIGHT_EDGE, block);
-    slant(80, 0, -112, 16, 16, 16, BOTTOM_FRONT_EDGE, block);
-    slant(64, -4, 32, 16, 8, 16, FRONT_LEFT_EDGE, slab);
-    slant(64, 12, 32, 16, 8, 16, FRONT_LEFT_EDGE, slab);
-    slant(96, -4, 32, 16, 8, 16, FRONT_RIGHT_EDGE, slab);
-    slant(96, 12, 32, 16, 8, 16, FRONT_RIGHT_EDGE, slab);
-    slant(96, -4, 64, 16, 8, 16, BACK_RIGHT_EDGE, slab);
-    slant(96, 12, 64, 16, 8, 16, BACK_RIGHT_EDGE, slab);
-    slant(64, -4, 64, 16, 8, 16, BACK_LEFT_EDGE, slab);
-    slant(64, 12, 64, 16, 8, 16, BACK_LEFT_EDGE, slab);
+        if ((i - j) % 2 == 0) cube(i * 16, -16, j * 16, 16, 16, 16, autotex(brick));
+        else cube(i * 16, -16, j * 16, 16, 8, 16, autotex(brick));
+    slant(64, 0, -32, 16, 24, 16, TOP_LEFT_EDGE, autotex(brick));
+    slant(80, 0, -16, 16, 24, 16, TOP_BACK_EDGE, autotex(brick));
+    slant(96, 0, -32, 16, 24, 16, TOP_RIGHT_EDGE, autotex(brick));
+    slant(80, 0, -48, 16, 24, 16, TOP_FRONT_EDGE, autotex(brick));
+    slant(64, 0, -96, 16, 24, 16, BOTTOM_LEFT_EDGE, autotex(brick));
+    slant(80, 0, -80, 16, 24, 16, BOTTOM_BACK_EDGE, autotex(brick));
+    slant(96, 0, -96, 16, 24, 16, BOTTOM_RIGHT_EDGE, autotex(brick));
+    slant(80, 0, -112, 16, 24, 16, BOTTOM_FRONT_EDGE, autotex(brick));
+    slant(64, -4, 32, 16, 8, 16, FRONT_LEFT_EDGE, autotex(brick));
+    slant(64, 12, 32, 16, 8, 16, FRONT_LEFT_EDGE, autotex(brick));
+    slant(96, -4, 32, 16, 8, 16, FRONT_RIGHT_EDGE, autotex(brick));
+    slant(96, 12, 32, 16, 8, 16, FRONT_RIGHT_EDGE, autotex(brick));
+    slant(96, -4, 64, 16, 8, 16, BACK_RIGHT_EDGE, autotex(brick));
+    slant(96, 12, 64, 16, 8, 16, BACK_RIGHT_EDGE, autotex(brick));
+    slant(64, -4, 64, 16, 8, 16, BACK_LEFT_EDGE, autotex(brick));
+    slant(64, 12, 64, 16, 8, 16, BACK_LEFT_EDGE, autotex(brick));
+
+    cube(32, 12, 0, 8, 8, 24, autotex(brick));
+    cube(0, 12, 0, 24, 8, 8, autotex(brick));
     // slant(80, 0, 48, 16, 16, 16, BOTTOM_BACK_EDGE, block);
     // slant(96, 0, 32, 16, 16, 16, BOTTOM_RIGHT_EDGE, block);
     // slant(80, 0, 16, 16, 16, 16, BOTTOM_FRONT_EDGE, block);
@@ -93,11 +97,11 @@ int main(int argc, char** argv) {
             rotate(45, X_AXIS);
             translate(64, 16, -64);
             origin(CENTER);
-            prism(0, 0, 0, 16, 16, 16, 32, X_AXIS, log);
-            pyramid(0, 12, 0, 8, 16, 8, 32, DIR_UP, smlog);
-            pyramid(0, -12, 0, 8, 16, 8, 32, DIR_DOWN, smlog);
-            pyramid(0, 0, 12, 8, 8, 16, 32, DIR_BACK, smlog);
-            pyramid(0, 0, -12, 8, 8, 16, 32, DIR_FRONT, smlog);
+            prism(0, 0, 0, 16, 16, 16, 32, X_AXIS, nettex(log));
+            pyramid(0, 12, 0, 8, 16, 8, 32, DIR_UP, nettex(smlog));
+            pyramid(0, -12, 0, 8, 16, 8, 32, DIR_DOWN, nettex(smlog));
+            pyramid(0, 0, 12, 8, 8, 16, 32, DIR_BACK, nettex(smlog));
+            pyramid(0, 0, -12, 8, 8, 16, 32, DIR_FRONT, nettex(smlog));
         endstate();
 
         ortho(width(SCREEN), height(SCREEN));

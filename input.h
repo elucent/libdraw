@@ -4,7 +4,7 @@
 #include "draw.h"
 #include "lib/GLFW/glfw3.h"
 
-void init_input();
+void init_input(GLFWwindow* window);
 void update_input(GLFWwindow* window, int x, int y, int scale);
 
 #endif

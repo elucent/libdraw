@@ -1,12 +1,15 @@
 #include "input.h"
 #include "lib/GLFW/glfw3.h"
 #include "lib/util/hash.h"
+#include "lib/util/io.h"
 
 static bool pressed[512];
 static bool tapped[512];
 static int codes[128];
 static map<string, int> longcodes;
-static int mx, my, winx, winy, winscale;
+static float mx, my;
+static float mouse_scroll = 0;
+static int winx, winy, winscale;
 
 static bool leftmousetapped = false,
         rightmousetapped = false,
@@ -143,6 +146,7 @@ static void updatemouse(GLFWwindow* window, int code) {
 }
 
 void update_input(GLFWwindow* window, int x, int y, int scale) {
+    mouse_scroll = 0;
     glfwPollEvents();
     for (int i = 0; i < 512; i ++)
         updatekey(window, i);
@@ -151,17 +155,23 @@ void update_input(GLFWwindow* window, int x, int y, int scale) {
 
     double dmx, dmy;
     glfwGetCursorPos(the_window, &dmx, &dmy);
-    mx = (dmx - x) / scale;
-    my = (dmy - y) / scale;
+    mx = ((float)dmx - (float)x) / (float)scale;
+    my = ((float)dmy - (float)y) / (float)scale;
     winx = x, winy = y, winscale = scale;
 }
 
-void init_input() {
+void scroll_callback(GLFWwindow* window, double xscroll, double yscroll) {
+    mouse_scroll = (float)yscroll;
+}
+
+void init_input(GLFWwindow* window) {
     for (int i = 0; i < 512; i ++) 
         pressed[i] = false, tapped[i] = false;
     for (int i = 0; i < 128; i ++) 
         codes[i] = 0;
     initcodes();
+
+    glfwSetScrollCallback(window, scroll_callback);
 }
 
 extern "C" bool LIBDRAW_SYMBOL(keytap)(const char* key) {
@@ -190,15 +200,19 @@ extern "C" bool LIBDRAW_SYMBOL(mousedown)(MouseButton button) {
     return button == LIBDRAW_CONST(LEFT_CLICK) ? leftmousepressed : rightmousepressed;
 }
 
-extern "C" int LIBDRAW_SYMBOL(mousex)() {
+extern "C" float LIBDRAW_SYMBOL(mousex)() {
     return mx;
 }
 
-extern "C" int LIBDRAW_SYMBOL(mousey)() {
+extern "C" float LIBDRAW_SYMBOL(mousey)() {
     return my;
 }
 
-extern "C" void LIBDRAW_SYMBOL(setmouse)(int x, int y) {
+extern "C" float LIBDRAW_SYMBOL(scroll)() {
+    return mouse_scroll;
+}
+
+extern "C" void LIBDRAW_SYMBOL(setmouse)(float x, float y) {
     mx = x * winscale + winx, my = y * winscale + winy;
     if (the_window) glfwSetCursorPos(the_window, mx, my);
 }

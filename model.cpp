@@ -133,7 +133,7 @@ Model init_render_buffer() {
     return 0;
 }
 
-Model createmodel() {
+Model create_new_model() {
     buffers.push(Buffer());
     return buffers.size() - 1;
 }

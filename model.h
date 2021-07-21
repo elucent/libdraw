@@ -26,6 +26,6 @@ struct Buffer {
 
 Buffer& findbuf(Model model);
 Model init_render_buffer();
-Model createmodel();
+Model create_new_model();
 
 #endif

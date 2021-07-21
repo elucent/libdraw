@@ -20,17 +20,24 @@ const char* LIBDRAW_CONST(DEFAULT_VSH) = R"(
     uniform int width, height;
     uniform mat4 model, view, projection;
     uniform vec3 light;
+    uniform int inverted;
 
     out vec4 v_col;
     out vec2 v_uv;
     out vec4 v_spr;
+    out vec4 v_pos;
 
     void main() {
-        gl_Position = projection * view * model * vec4(pos, 1);
-        float bright = (-dot(light, normalize(mat3(model) * norm)) + 1) * 0.375 + 0.25;
+        v_pos = view * model * vec4(pos, 1);
+        gl_Position = projection * v_pos;
+        float bright = (-dot(light, normalize(mat3(model) * norm)) + 2) / 3;
         v_col = vec4(bright * col.rgb, col.a);
         v_uv = uv;
-        v_spr = spr;
+
+        if (inverted == 1) {
+            v_spr = vec4(spr.x, spr.y + spr.w, spr.z, -spr.w);
+        }
+        else v_spr = vec4(spr.x, spr.y, spr.z, spr.w);
     }
 )";
 
@@ -39,15 +46,25 @@ const char* LIBDRAW_CONST(DEFAULT_FSH) = R"(
     in vec4 v_col;
     in vec2 v_uv;
     in vec4 v_spr;
+    in vec4 v_pos;
 
     uniform sampler2D tex;
+    uniform vec4 fog_color;
+    uniform float fog_range;
 
     out vec4 color;
 
     void main() {
-        vec2 fixed_uv = vec2(v_spr.x + v_spr.z * v_uv.x, v_spr.y + v_spr.w * v_uv.y);
+        vec2 fract_uv = fract(v_uv);
+        vec2 fixed_uv = vec2(v_spr.x + v_spr.z * fract_uv.x, v_spr.y + v_spr.w * fract_uv.y);
         color = v_col * texture2D(tex, fixed_uv);
         if (color.a < 0.001) discard;
+
+        if (fog_range > 0.01) {
+            float v_dist = sqrt(v_pos.x * v_pos.x + v_pos.y * v_pos.y + v_pos.z * v_pos.z);
+            float fog_density = clamp((fog_range - v_dist) / fog_range, 0, 1);
+            color = vec4(mix(fog_color.rgb, color.rgb, fog_density), color.a);
+        }
     }
 )";
 

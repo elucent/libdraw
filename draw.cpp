@@ -18,6 +18,7 @@ namespace internal {
     static GLuint vsh = 0, fsh = 0, shprog = 0, vao = 0;
     static GLuint fbo = 0, rbo = 0, fbtex = 0;
     static int frames = 0;
+    static double prev_frame_time = 0;
 
     static int width = 0, height = 0, screenwidth = 0, screenheight = 0;
 
@@ -25,6 +26,20 @@ namespace internal {
         internal::screenwidth = width;
         internal::screenheight = height;
     }
+
+    // #ifdef __unix__
+    // #include <unistd.h>
+    // #elif defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+    // #include <windows.h>
+    // #endif
+
+    // static void sleep(int ms) {
+    //     #ifdef __unix__
+    //     usleep(ms * 1000);
+    //     #elif defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__)
+    //     Sleep(ms);
+    //     #endif
+    // }
 
     void init() {
         // setup GLFW for window
@@ -34,7 +49,7 @@ namespace internal {
 
         // setup OpenGL
         gladLoadGLLoader((GLADloadproc)glfwGetProcAddress);
-        init_input();
+        init_input(window);
         init_images(width, height);
         init_shaders();
         init_default_fbo(width, height);
@@ -78,9 +93,11 @@ extern "C" void LIBDRAW_SYMBOL(window)(int width, int height, const char* title)
 }
 
 static void prelude() {
+    identity(transform);
+    nofog();
+    glUniformMatrix4fv(find_uniform("model"), 1, GL_FALSE, (const GLfloat*)transform);
     ortho(internal::width, internal::height);
     look(0, 0, 0, 0, 0);
-    identity(transform);
     color(LIBDRAW_CONST(WHITE));
     origin(LIBDRAW_CONST(CENTER));
 }
@@ -105,8 +122,11 @@ extern "C" bool LIBDRAW_SYMBOL(running)() {
     bind(LIBDRAW_CONST(DEFAULT_SHADER));
     ortho(internal::screenwidth, internal::screenheight);
     origin(LIBDRAW_CONST(CENTER));
-    stretched_sprite(internal::screenwidth / 2, internal::screenheight / 2, -w, -h, LIBDRAW_CONST(SCREEN));
+    stretched_sprite(internal::screenwidth / 2, internal::screenheight / 2, w, h, LIBDRAW_CONST(SCREEN));
+    invert = true;
+    prelude();
     flush(getrendermodel());
+    invert = false;
     glfwSwapBuffers(internal::window);
 
     // done ending frame
@@ -114,7 +134,17 @@ extern "C" bool LIBDRAW_SYMBOL(running)() {
     bool closed = glfwWindowShouldClose(internal::window);
     if (closed) return false;
 
+    double frame_time = glfwGetTime();
+    double diff = frame_time - internal::prev_frame_time;
+    if (diff < 1.0f / 60.0f) {
+        double ms = 1.0f / 60.0f - diff;
+        ms *= 1000;
+        // internal::sleep((int)ms);
+    }
+    internal::prev_frame_time = glfwGetTime();
+
     internal::frames ++;
+    bindfbo(LIBDRAW_CONST(SCREEN));
     bind(LIBDRAW_CONST(DEFAULT_SHADER));
     prelude();
     return true;
@@ -169,13 +199,3 @@ extern "C" void LIBDRAW_SYMBOL(clear)(Image i);
 extern "C" Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
 extern "C" void LIBDRAW_SYMBOL(paint)(Image img);
 extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);
-
-// Input
-
-extern "C" bool LIBDRAW_SYMBOL(keytap)(const char* key);
-extern "C" bool LIBDRAW_SYMBOL(keydown)(const char* key);
-extern "C" bool LIBDRAW_SYMBOL(mousetap)(MouseButton button);
-extern "C" bool LIBDRAW_SYMBOL(mousedown)(MouseButton button);
-extern "C" int LIBDRAW_SYMBOL(mousex)();
-extern "C" int LIBDRAW_SYMBOL(mousey)();
-extern "C" void LIBDRAW_SYMBOL(setmouse)(int x, int y);

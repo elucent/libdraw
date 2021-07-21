@@ -122,15 +122,29 @@ extern "C" void LIBDRAW_SYMBOL(endstate)();
 
 // 3D Drawing
 
-extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Image img);
+enum TextureType {
+    LIBDRAW_CONST(TEX_NET),
+    LIBDRAW_CONST(TEX_AUTO),
+    LIBDRAW_CONST(TEX_STRETCH)
+};
+
+struct Texture {
+    Image img;
+    TextureType type;
+};
+
+extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img);
+extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img);
+extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img);
+extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Texture img);
 extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img);
-extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Image img);
-extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Image img);
-extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Image img);
-extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Image img);
-extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float w, float h, float l, Direction dir, Image img);
-extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float w, float h, float l, int m, int n, Image img);
-extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float w, float h, float l, Image img);
+extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Texture img);
+extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Texture img);
+extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Texture img);
+extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Texture img);
+extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float w, float h, float l, Direction dir, Texture img);
+extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float w, float h, float l, int m, int n, Texture img);
+extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float w, float h, float l, Texture img);
 
 // Camera
 
@@ -146,8 +160,10 @@ extern "C" void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, f
 
 using Model = int;
 
+extern "C" Model LIBDRAW_SYMBOL(createmodel)();
 extern "C" Model LIBDRAW_SYMBOL(sketch)();
 extern "C" void LIBDRAW_SYMBOL(sketchto)(Model model);
+extern "C" void LIBDRAW_SYMBOL(flush)();
 // TODO : extern "C" Model LIBDRAW_SYMBOL(loadobj)(const char* path);
 extern "C" void LIBDRAW_SYMBOL(render)(Model sketch, Image img);
 
@@ -161,6 +177,8 @@ extern "C" Shader LIBDRAW_CONST(DEFAULT_SHADER);
 
 extern "C" void LIBDRAW_SYMBOL(clear)(Image img);
 extern "C" Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
+extern "C" void LIBDRAW_SYMBOL(fog)(Color color, float density);
+extern "C" void LIBDRAW_SYMBOL(nofog)();
 extern "C" void LIBDRAW_SYMBOL(paint)(Image img);
 extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);
 
@@ -175,9 +193,10 @@ extern "C" bool LIBDRAW_SYMBOL(keytap)(const char* key);
 extern "C" bool LIBDRAW_SYMBOL(keydown)(const char* key);
 extern "C" bool LIBDRAW_SYMBOL(mousetap)(MouseButton button);
 extern "C" bool LIBDRAW_SYMBOL(mousedown)(MouseButton button);
-extern "C" int LIBDRAW_SYMBOL(mousex)();
-extern "C" int LIBDRAW_SYMBOL(mousey)();
-extern "C" void LIBDRAW_SYMBOL(setmouse)(int x, int y);
+extern "C" float LIBDRAW_SYMBOL(mousex)();
+extern "C" float LIBDRAW_SYMBOL(mousey)();
+extern "C" float LIBDRAW_SYMBOL(scroll)();
+extern "C" void LIBDRAW_SYMBOL(setmouse)(float x, float y);
 extern "C" void LIBDRAW_SYMBOL(hidemouse)();
 extern "C" void LIBDRAW_SYMBOL(showmouse)();
 

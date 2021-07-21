@@ -16,7 +16,7 @@ static float red = 1, green = 1, blue = 1, alpha = 1;
 static float lightx = 0.218218, lighty = -0.872872, lightz = 0.436436;
 static bool mode3d = false;
 static Model rendermodel;
-static bool invert = false;
+bool invert = false;
 static float yaw = 0, pitch = 0, roll = 0;
 static float camerax = 0, cameray = 0, cameraz = 0;
 static Image currentfont;
@@ -143,17 +143,11 @@ void enqueue(const Step& step) {
 }
 
 static void drawbuf(Buffer& buf) {
-    if (invert) {
-        scale(projection, -1, -1, 1);
-        glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
-    }
+    glUniform1i(find_uniform("inverted"), invert ? 1 : 0);
     if (!buf.empty()) {
         buf.draw();
     }
-    if (invert) {
-        scale(projection, -1, -1, 1);
-        glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
-    }
+    glUniform1i(find_uniform("inverted"), 0);
 }
 
 static bool stateful(const Step& step) {
@@ -174,15 +168,15 @@ static bool stateful(const Step& step) {
         case STEP_BOARD:
             return !mode3d || findimg(step.data.board.img).id != texture;
         case STEP_CUBE:
-            return !mode3d || findimg(step.data.cube.img).id != texture;
+            return !mode3d || findimg(step.data.cube.tex.img).id != texture;
         case STEP_SLANT:
-            return !mode3d || findimg(step.data.slant.img).id != texture;
+            return !mode3d || findimg(step.data.slant.tex.img).id != texture;
         case STEP_PRISM:
-            return !mode3d || findimg(step.data.prism.img).id != texture;
+            return !mode3d || findimg(step.data.prism.tex.img).id != texture;
         case STEP_CONE:
-            return !mode3d || findimg(step.data.cone.img).id != texture;
+            return !mode3d || findimg(step.data.cone.tex.img).id != texture;
         case STEP_HEDRON:
-            return !mode3d || findimg(step.data.hedron.img).id != texture;
+            return !mode3d || findimg(step.data.hedron.tex.img).id != texture;
         case STEP_ORTHO:
         case STEP_FRUSTUM:
         case STEP_PAN:
@@ -193,6 +187,7 @@ static bool stateful(const Step& step) {
         case STEP_TRANSLATE:
         case STEP_RENDER:
         case STEP_END:
+        case STEP_FOG:
             return true;
         default:
             return false;
@@ -234,8 +229,8 @@ static void plane(Buffer& buf,
     buf.pos(x + w * hx, y + w * hy, z + w * hz); 
     for (int i = 0; i < 6; i ++) buf.col(red, green, blue, alpha);
     for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
-    buf.uv(0, 0); buf.uv(1, 0); buf.uv(1, 1);
-    buf.uv(1, 1); buf.uv(0, 1); buf.uv(0, 0);
+    buf.uv(1, 0); buf.uv(0, 0); buf.uv(0, 1);
+    buf.uv(0, 1); buf.uv(1, 1); buf.uv(1, 0);
     for (int i = 0; i < 6; i ++) buf.spr(u, v, uw, vh);
 }
 
@@ -257,6 +252,30 @@ static void scaleduvx(Buffer& buf, float u, float v, float w, float h, float iw,
     buf.uv((u + w) / iw, (v + h) / ih);
 }
 
+static float frem(float a, float b) {
+    float denom = floor(a / b);
+    return a - denom * b;   
+}
+
+static void autouv(Buffer& buf, float u, float v, float w, float h, float iw, float ih) {
+    float u_auto = frem(u, iw) * 2 / iw, v_auto = frem(v, ih) * 2 / ih, w_auto = w / iw, h_auto = h / ih;
+    buf.uv(u_auto + w_auto, v_auto + h_auto);
+    buf.uv(u_auto, v_auto + h_auto);
+    buf.uv(u_auto, v_auto);
+    buf.uv(u_auto, v_auto);
+    buf.uv(u_auto + w_auto, v_auto);
+    buf.uv(u_auto + w_auto, v_auto + h_auto);
+}
+
+static void stretchuv(Buffer& buf) {
+    buf.uv(1, 1);
+    buf.uv(0, 1);
+    buf.uv(0, 0);
+    buf.uv(0, 0);
+    buf.uv(1, 0);
+    buf.uv(1, 1);
+}
+
 static void polygon(Buffer& buf, float x, float y, float r, float n) {
     bindtex(BLANK);
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1;
@@ -274,7 +293,8 @@ static void polygon(Buffer& buf, float x, float y, float r, float n) {
     }
 }
 
-static void cube(Buffer& buf, float x, float y, float z, float w, float h, float l, Image i) {
+static void cube(Buffer& buf, float x, float y, float z, float w, float h, float l, Texture tex) {
+    Image i = tex.img;
     bindtex(i);
     ImageMeta* meta = &findimg(i);
     while (meta->parent > 0) meta = &findimg(meta->parent);
@@ -317,17 +337,34 @@ static void cube(Buffer& buf, float x, float y, float z, float w, float h, float
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
-    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-    scaleduv(buf, h * 2 + l, h, w, l, iw, ih); // negative y
-    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+    switch (tex.type) {
+        default:
+        case LIBDRAW_CONST(TEX_NET):
+            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+            scaleduv(buf, h * 2 + l, h, w, l, iw, ih); // negative y
+            scaleduv(buf, h, h, w, l, iw, ih); // positive y
+            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            break;
+        case LIBDRAW_CONST(TEX_AUTO):
+            autouv(buf, z, y, l, h, iw, ih);
+            autouv(buf, z, y, l, h, iw, ih);
+            autouv(buf, z, x, l, w, iw, ih);
+            autouv(buf, z, x, l, w, iw, ih);
+            autouv(buf, x, y, w, h, iw, ih);
+            autouv(buf, x, y, w, h, iw, ih);
+            break;
+        case LIBDRAW_CONST(TEX_STRETCH):
+            for (int i = 0; i < 6; i ++) stretchuv(buf);
+            break;
+    }
     
     for (int i = 0; i < 36; i ++) buf.spr(u, v, uw, vh);
 }
 
-static void prism(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Axis axis, Image i) {
+static void prism(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Axis axis, Texture tex) {
+    Image i = tex.img;
     bindtex(i);
     ImageMeta* meta = &findimg(i);
     while (meta->parent > 0) meta = &findimg(meta->parent);
@@ -426,7 +463,8 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
     }
 }
 
-static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Direction dir, Image i) {
+static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Direction dir, Texture tex) {
+    Image i = tex.img;
     Axis axis = (Axis)(dir / 2);
     bindtex(i);
     ImageMeta* meta = &findimg(i);
@@ -440,6 +478,7 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
 
     bool flipped = dir % 2 == 0;
+    if (axis == X_AXIS) flipped = !flipped;
 
     float lv[3] = { 0, 0, 0 }, hv[3] = { 0, 0, 0 }, vv[3] = { 0, 0, 0 };
     float ln[3] = { 0, 0, 0 }, hn[3] = { 0, 0, 0 }, vn[3] = { 0, 0, 0 };
@@ -525,8 +564,8 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
             buf.pos(frontx + rx1, fronty + ry1, frontz + rz1);
         }
         else {
-            buf.pos(backx + rx1, backx + ry1, backz + rz1);
-            buf.pos(backx + rx2, backx + ry2, backz + rz2);
+            buf.pos(backx + rx1, backy + ry1, backz + rz1);
+            buf.pos(backx + rx2, backy + ry2, backz + rz2);
             buf.pos(frontx, fronty, frontz);
         }
 
@@ -539,7 +578,8 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
     }
 }
 
-static void hedron(Buffer& buf, float x, float y, float z, float w, float h, float l, int m, int n, Image i) {
+static void hedron(Buffer& buf, float x, float y, float z, float w, float h, float l, int m, int n, Texture tex) {
+    Image i = tex.img;
     bindtex(i);
     ImageMeta* meta = &findimg(i);
     while (meta->parent > 0) meta = &findimg(meta->parent);
@@ -660,7 +700,23 @@ static void scaleduvxtri(Buffer& buf, float u, float v, float w, float h, float 
     if (!flipu || flipv) buf.uv((u + w) / iw, (v + h) / ih);
 }
 
-static void slant(Buffer& buf, float x, float y, float z, float w, float h, float l, Edge edge, Image i) {
+static void autouvtri(Buffer& buf, float u, float v, float w, float h, float iw, float ih, bool flipu, bool flipv) {
+    float u_auto = frem(u, iw) * 2 / iw, v_auto = frem(v, ih) * 2 / ih, w_auto = w / iw, h_auto = h / ih;
+    if (flipu || flipv) buf.uv(u_auto, v_auto + h_auto);
+    if (flipu || !flipv) buf.uv(u_auto, v_auto);
+    if (!flipu || !flipv) buf.uv(u_auto + w_auto, v_auto);
+    if (!flipu || flipv) buf.uv(u_auto + w_auto, v_auto + h_auto);
+}
+
+static void stretchuvtri(Buffer& buf, bool flipu, bool flipv) {
+    if (flipu || flipv) buf.uv(0, 1);
+    if (flipu || !flipv) buf.uv(0, 0);
+    if (!flipu || !flipv) buf.uv(1, 0);
+    if (!flipu || flipv) buf.uv(1, 1);
+}
+
+static void slant(Buffer& buf, float x, float y, float z, float w, float h, float l, Edge edge, Texture tex) {
+    Image i = tex.img;
     bindtex(i);
     ImageMeta* meta = &findimg(i);
     while (meta->parent > 0) meta = &findimg(meta->parent);
@@ -717,7 +773,7 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             break;
         }
         case BACK_LEFT_EDGE: {
-            float hx = dx * -2, hy = 0, hz = dz * 2;
+            float hx = dx * 2, hy = 0, hz = dz * 2;
             float vx = 0, vy = dy * -2, vz = 0;
             nx = -(hy * vz - hz * vy), ny = -(hz * vx - hx * vz), nz = -(hx * vy - hy * vx);
             break;
@@ -748,7 +804,7 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
         }
     }
     normalize(nx, ny, nz);
-    bool cullX = w < l + (edge % 2);
+    bool cullX = w > l + (edge % 2);
 
     switch (edge) {
         case TOP_LEFT_EDGE: {
@@ -765,32 +821,72 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
-            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, false);
-            scaleduvtri(buf, h, h + l, l, h, iw, ih, false, false);
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, false);
+                    scaleduvtri(buf, h, h + l, l, h, iw, ih, false, false);
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih);
+                    if (l * h > w * l) autouv(buf, z, y, l, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    autouvtri(buf, x, y, w, h, iw, ih, true, false);
+                    autouvtri(buf, x, y, w, h, iw, ih, false, false);
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, true, false);
+                    stretchuvtri(buf, false, false);
+                    break;
+            }
             break;
         }
         case TOP_BACK_EDGE: {
             buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); // nx
             buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // px
-            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // ny
-            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
             buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // ny
+            buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // pz
             buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
             for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
-            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
-            scaleduvxtri(buf, h, h, -h, w, iw, ih, true, false);
-            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, false);
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvxtri(buf, h, h, -h, w, iw, ih, true, false);
+                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, false);
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    autouvtri(buf, z, y, l, h, iw, ih, true, false);
+                    autouvtri(buf, z, y, l, h, iw, ih, false, false);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, x, y, w, h, iw, ih);
+                    break;
+                case TEX_STRETCH:
+                    stretchuvtri(buf, true, false);
+                    stretchuvtri(buf, false, false);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
         case TOP_RIGHT_EDGE: {
@@ -807,32 +903,72 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
-            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, false);
-            scaleduvtri(buf, h, h + l, l, h, iw, ih, true, false);
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, false);
+                    scaleduvtri(buf, h, h + l, l, h, iw, ih, true, false);
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih);
+                    if (l * h > w * l) autouv(buf, z, y, l, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    autouvtri(buf, x, y, w, h, iw, ih, false, false);
+                    autouvtri(buf, x, y, w, h, iw, ih, true, false);
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, false, false);
+                    stretchuvtri(buf, true, false);
+                    break;
+            }
             break;
         }
         case TOP_FRONT_EDGE: {
             buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz); // nx
             buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); // px
-            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
-            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz);
             buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
             buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z + dz);
             buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); // nz
             buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz);
             for (int i = 0; i < 3; i ++) buf.norm(-1, 0, 0);
             for (int i = 0; i < 3; i ++) buf.norm(1, 0, 0);
-            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 1, 0);
+            for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
-            scaleduvxtri(buf, h, h, -h, w, iw, ih, false, false);
-            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, false);
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvxtri(buf, h, h, -h, w, iw, ih, false, false);
+                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, false);
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    break;
+                case TEX_AUTO:
+                    autouvtri(buf, z, y, l, h, iw, ih, false, false);
+                    autouvtri(buf, z, y, l, h, iw, ih, true, false);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, x, y, w, h, iw, ih);
+                    break;
+                case TEX_STRETCH:
+                    stretchuvtri(buf, false, false);
+                    stretchuvtri(buf, true, false);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
         case FRONT_LEFT_EDGE: {    
@@ -857,12 +993,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
 
-            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, true); // negative y
-            scaleduvtri(buf, h, h, w, l, iw, ih, false, true); // positive y
-            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-            if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, true); // negative y
+                    scaleduvtri(buf, h, h, w, l, iw, ih, false, true); // positive y
+                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih); // negative x
+                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // positive x
+                    autouvtri(buf, z, x, l, w, iw, ih, true, true); // negative y
+                    autouvtri(buf, z, x, l, w, iw, ih, false, true); // positive y
+                    autouv(buf, x, y, w, h, iw, ih); // negative z
+                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // positive z
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    if (!cullX) stretchuv(buf);
+                    stretchuvtri(buf, true, true);
+                    stretchuvtri(buf, false, true);
+                    stretchuv(buf);
+                    if (cullX) stretchuv(buf);
+                    break;
+            }
             break;
         }
         case FRONT_RIGHT_EDGE: {    
@@ -888,12 +1044,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
 
-            if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, false); // negative y
-            scaleduvtri(buf, h, h, w, l, iw, ih, false, false); // positive y
-            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-            if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            switch (tex.type) {
+                case TEX_NET:
+                    if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, false); // negative y
+                    scaleduvtri(buf, h, h, w, l, iw, ih, false, false); // positive y
+                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // negative x
+                    autouv(buf, z, y, l, h, iw, ih); // positive x
+                    autouvtri(buf, z, x, l, w, iw, ih, true, false); // negative y
+                    autouvtri(buf, z, x, l, w, iw, ih, false, false); // positive y
+                    autouv(buf, x, y, w, h, iw, ih); // negative z
+                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // positive z
+                    break;
+                case TEX_STRETCH:
+                    if (!cullX) stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, true, false);
+                    stretchuvtri(buf, false, false);
+                    stretchuv(buf);
+                    if (cullX) stretchuv(buf);
+                    break;
+            }
             break;
         }
         case BACK_RIGHT_EDGE: {    
@@ -919,12 +1095,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
-            if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, false); // negative y
-            scaleduvtri(buf, h, h, w, l, iw, ih, true, false); // positive y
-            if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            switch (tex.type) {
+                case TEX_NET:
+                    if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, false); // negative y
+                    scaleduvtri(buf, h, h, w, l, iw, ih, true, false); // positive y
+                    if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // negative x
+                    autouv(buf, z, y, l, h, iw, ih); // positive x
+                    autouvtri(buf, z, x, l, w, iw, ih, false, false); // negative y
+                    autouvtri(buf, z, x, l, w, iw, ih, true, false); // positive y
+                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // negative z
+                    autouv(buf, x, y, w, h, iw, ih); // positive z
+                    break;
+                case TEX_STRETCH:
+                    if (!cullX) stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, false, false);
+                    stretchuvtri(buf, true, false);
+                    if (cullX) stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
         case BACK_LEFT_EDGE: {    
@@ -950,33 +1146,73 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
-            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, true); // negative y
-            scaleduvtri(buf, h, h, w, l, iw, ih, true, true); // positive y
-            if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, true); // negative y
+                    scaleduvtri(buf, h, h, w, l, iw, ih, true, true); // positive y
+                    if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih); // negative x
+                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // positive x
+                    autouvtri(buf, z, x, l, w, iw, ih, false, true); // negative y
+                    autouvtri(buf, z, x, l, w, iw, ih, true, true); // positive y
+                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // negative z
+                    autouv(buf, x, y, w, h, iw, ih); // positive z
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    if (!cullX) stretchuv(buf);
+                    stretchuvtri(buf, false, true);
+                    stretchuvtri(buf, true, true);
+                    if (cullX) stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
         case BOTTOM_LEFT_EDGE: {
             buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
             buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
-            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
-            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y + dy, z - dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz); // py
             buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // nz
             buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // pz
             for (int i = 0; i < 6; i ++) buf.norm(-1, 0, 0);
-            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
-            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, true);
-            scaleduvtri(buf, h, h + l, l, h, iw, ih, false, true);
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, true);
+                    scaleduvtri(buf, h, h + l, l, h, iw, ih, false, true);
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih);
+                    if (l * h > w * h) autouv(buf, z, y, l, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    autouvtri(buf, x, y, w, h, iw, ih, true, true);
+                    autouvtri(buf, x, y, w, h, iw, ih, false, true);
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, true, true);
+                    stretchuvtri(buf, false, true);
+                    break;
+            }
             break;
         }
         case BOTTOM_BACK_EDGE: {
@@ -993,32 +1229,72 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
-            scaleduvxtri(buf, h, h, -h, w, iw, ih, true, true);
-            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, true);
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvxtri(buf, h, h, -h, w, iw, ih, true, true);
+                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, true);
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                    break;
+                case TEX_AUTO:
+                    autouvtri(buf, z, y, l, h, iw, ih, true, true);
+                    autouvtri(buf, z, y, l, h, iw, ih, false, true);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, x, y, w, h, iw, ih);
+                    break;
+                case TEX_STRETCH:
+                    stretchuvtri(buf, true, true);
+                    stretchuvtri(buf, false, true);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
         case BOTTOM_RIGHT_EDGE: {
             buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); // px
             buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y - dy, z + dz);
-            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
-            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); // py
             buf.pos(x + dx, y + dy, z + dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x - dx, y - dy, z - dz);
+            buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // ny
+            buf.pos(x + dx, y - dy, z - dz); buf.pos(x + dx, y - dy, z + dz); buf.pos(x - dx, y - dy, z + dz);
             buf.pos(x - dx, y - dy, z - dz); buf.pos(x + dx, y + dy, z - dz); buf.pos(x + dx, y - dy, z - dz); // nz
             buf.pos(x + dx, y - dy, z + dz); buf.pos(x + dx, y + dy, z + dz); buf.pos(x - dx, y - dy, z + dz); // pz
             for (int i = 0; i < 6; i ++) buf.norm(1, 0, 0);
-            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
+            for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
-            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, true);
-            scaleduvtri(buf, h, h + l, l, h, iw, ih, true, true);
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, true);
+                    scaleduvtri(buf, h, h + l, l, h, iw, ih, true, true);
+                    break;
+                case TEX_AUTO:
+                    autouv(buf, z, y, l, h, iw, ih);
+                    if (l * h > w * h) autouv(buf, z, y, l, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    autouvtri(buf, x, y, w, h, iw, ih, false, true);
+                    autouvtri(buf, x, y, w, h, iw, ih, true, true);
+                    break;
+                case TEX_STRETCH:
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuvtri(buf, false, true);
+                    stretchuvtri(buf, true, true);
+                    break;
+            }
             break;
         }
         case BOTTOM_FRONT_EDGE: {
@@ -1035,11 +1311,31 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, -1, 0);
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
-            scaleduvxtri(buf, h, h, -h, w, iw, ih, false, true);
-            scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, true);
-            scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+
+            switch (tex.type) {
+                case TEX_NET:
+                    scaleduvxtri(buf, h, h, -h, w, iw, ih, false, true);
+                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, true);
+                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
+                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
+                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                    break;
+                case TEX_AUTO:
+                    autouvtri(buf, z, y, l, h, iw, ih, false, true);
+                    autouvtri(buf, z, y, l, h, iw, ih, true, true);
+                    autouv(buf, z, x, l, w, iw, ih);
+                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
+                    else autouv(buf, z, x, l, w, iw, ih);
+                    autouv(buf, x, y, w, h, iw, ih);
+                    break;
+                case TEX_STRETCH:
+                    stretchuvtri(buf, false, true);
+                    stretchuvtri(buf, true, true);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    stretchuv(buf);
+                    break;
+            }
             break;
         }
     }
@@ -1129,7 +1425,7 @@ static void step(Buffer& buf, const Step& step) {
         case STEP_CUBE: {
             ensure3d();
             auto& c = step.data.cube;
-            return cube(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.img);
+            return cube(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.tex);
         }
         case STEP_BOARD: {
             ensure3d();
@@ -1139,22 +1435,22 @@ static void step(Buffer& buf, const Step& step) {
         case STEP_SLANT: {
             ensure3d();
             auto& c = step.data.slant;
-            return slant(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.edge, c.img);
+            return slant(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.edge, c.tex);
         }
         case STEP_PRISM: {
             ensure3d();
             auto& p = step.data.prism;
-            return prism(buf, p.x, p.y, p.z, p.w, p.h, p.l, p.n, p.axis, p.img);
+            return prism(buf, p.x, p.y, p.z, p.w, p.h, p.l, p.n, p.axis, p.tex);
         }
         case STEP_CONE: {
             ensure3d();
             auto& c = step.data.cone;
-            return pyramid(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.n, c.dir, c.img);
+            return pyramid(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.n, c.dir, c.tex);
         }
         case STEP_HEDRON: {
             ensure3d();
             auto& h = step.data.hedron;
-            return hedron(buf, h.x, h.y, h.z, h.w, h.h, h.l, h.m, h.n, h.img);
+            return hedron(buf, h.x, h.y, h.z, h.w, h.h, h.l, h.m, h.n, h.tex);
         }
         case STEP_ORTHO: {
             identity(projection);
@@ -1241,6 +1537,16 @@ static void step(Buffer& buf, const Step& step) {
             matset(transform, matstack.back().data);
             glUniformMatrix4fv(find_uniform("model"), 1, GL_FALSE, (const GLfloat*)transform);
             matstack.pop();
+            return;
+        }
+        case STEP_FOG: {
+            Color c = step.data.fog.color;
+            float red = (c >> 24 & 255) / 255.0f;
+            float green = (c >> 16 & 255) / 255.0f;
+            float blue = (c >> 8 & 255) / 255.0f;
+            float alpha = (c & 255) / 255.0f;
+            glUniform4f(find_uniform("fog_color"), red, green, blue, alpha);
+            glUniform1f(find_uniform("fog_range"), step.data.fog.range);
             return;
         }
     }
@@ -1331,7 +1637,19 @@ extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int 
 
 // 3D Drawing
 
-extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Image img) {
+extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img) {
+    return {img, LIBDRAW_CONST(TEX_NET)};
+}
+
+extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img) {
+    return {img, LIBDRAW_CONST(TEX_AUTO)};
+}
+
+extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img) {
+    return {img, LIBDRAW_CONST(TEX_STRETCH)};
+}
+
+extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Texture img) {
     Step step;
     step.type = STEP_CUBE;
     step.data.cube = { x, y, z, w, h, l, img };
@@ -1345,43 +1663,43 @@ extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img) {
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Image img) {
+extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Texture img) {
     Step step;
     step.type = STEP_SLANT;
     step.data.slant = { x, y, z, w, h, l, edge, img };
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Image img) {
+extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Texture img) {
     Step step;
     step.type = STEP_PRISM;
     step.data.prism = { x, y, z, w, h, l, n, axis, img };
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Image img) {
+extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Texture img) {
     prism(x, y, z, w, h, l, 32, axis, img);
 }
 
-extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Image img) {
+extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Texture img) {
     Step step;
     step.type = STEP_CONE;
     step.data.cone = { x, y, z, w, h, l, n, dir, img };
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float w, float h, float l, Direction dir, Image img) {
+extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float w, float h, float l, Direction dir, Texture img) {
     pyramid(x, y, z, w, h, l, 32, dir, img);
 }
 
-extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float w, float h, float l, int m, int n, Image img) {
+extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float w, float h, float l, int m, int n, Texture img) {
     Step step;
     step.type = STEP_HEDRON;
     step.data.hedron = { x, y, z, w, h, l, m, n, img };
     enqueue(step);
 }
 
-extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float w, float h, float l, Image img) {
+extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float w, float h, float l, Texture img) {
     hedron(x, y, z, w, h, l, 16, 8, img);
 }
 
@@ -1490,7 +1808,7 @@ extern "C" void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, f
     step.type = STEP_LOOK;
     float lookyaw = atan2(x2 - x1, z2 - z1) * 180 / pi;
     float lookdist = sqrt((x2 - x1) * (x2 - x1) + (z2 - z1) * (z2 - z1));
-    float lookpitch = atan2(y2 - y1, lookdist);
+    float lookpitch = atan2(y2 - y1, lookdist) * 180 / pi;
     step.data.look = { x1, y1, z1, lookyaw, lookpitch };
     enqueue(step);
 }
@@ -1498,9 +1816,7 @@ extern "C" void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, f
 extern "C" void LIBDRAW_SYMBOL(paint)(Image img) {
     Image i = currentfbo();
     bindfbo(img);
-    invert = true;
     flush(rendermodel);
-    invert = false;
     bindfbo(i);
 }
 
@@ -1509,27 +1825,48 @@ extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader) {
     Shader s = active_shader();
     bind(shader);
     bindfbo(img);
-    invert = true;
     flush(rendermodel);
-    invert = false;
     bind(s);
     bindfbo(i);
+}
+
+extern "C" void LIBDRAW_SYMBOL(fog)(Color color, float range) {
+    Step step;
+    step.type = STEP_FOG;
+    step.data.fog = { color, range };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(nofog)() {
+    Step step;
+    step.type = STEP_FOG;
+    step.data.fog = { WHITE, 0 };
+    enqueue(step);
+}
+
+extern "C" Model LIBDRAW_SYMBOL(createmodel)() {
+    return create_new_model();
 }
 
 extern "C" void LIBDRAW_SYMBOL(sketchto)(Model model) {
     Buffer& buf = findbuf(model);
     buf.reset();
-    int i = 0;
-    for (; i < steps.size(); i ++) { // handle any state changes before getting into our model definition
-        ::step(buf, steps[i]);
+
+    for (const Step& step : steps) {
+        if (stateful(step)) drawbuf(buf), buf.reset();
+        ::step(buf, step);
     }
     steps.clear();
 }
 
 extern "C" Model LIBDRAW_SYMBOL(sketch)() {
-    Model m = createmodel();
+    Model m = create_new_model();
     sketchto(m);
     return m;
+}
+
+extern "C" void LIBDRAW_SYMBOL(flush)() {
+    flush(rendermodel);
 }
 
 extern "C" void LIBDRAW_SYMBOL(render)(Model model, Image img) {
