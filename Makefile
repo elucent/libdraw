@@ -6,7 +6,7 @@ OBJS := $(patsubst %.cpp,%.o,$(SRCS))
 
 CXX := g++
 CXXHEADERS := -I. -Ilib/util
-CXXFLAGS := $(CXXHEADERS) -std=c++17 -Os -ffast-math -fno-rtti -fno-exceptions -Wno-null-dereference
+CXXFLAGS := $(CXXHEADERS) -std=c++11 -Os -ffast-math -fno-rtti -fno-exceptions -Wno-null-dereference
 LDFLAGS := -Llib/SOIL -Llib/GLFW -Llib -L.
 
 ifeq '$(findstring ;,$(PATH))' ';'

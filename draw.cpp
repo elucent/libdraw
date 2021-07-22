@@ -99,7 +99,7 @@ static void prelude() {
     ortho(internal::width, internal::height);
     look(0, 0, 0, 0, 0);
     color(LIBDRAW_CONST(WHITE));
-    origin(LIBDRAW_CONST(CENTER));
+    origin(LIBDRAW_CONST(FRONT_TOP_LEFT));
 }
 
 extern "C" bool LIBDRAW_SYMBOL(running)() {
@@ -188,14 +188,3 @@ extern "C" Color LIBDRAW_SYMBOL(rgb)(int r, int g, int b) {
 extern "C" Color LIBDRAW_SYMBOL(rgba)(int r, int g, int b, int a) {
     return (r & 255) << 24 | (g & 255) << 16 | (b & 255) << 8 | a & 255;
 }
-
-// Effects
-
-extern "C" const char* LIBDRAW_CONST(IDENTITY_VSH);
-extern "C" const char* LIBDRAW_CONST(IDENTITY_FSH);
-extern "C" Shader LIBDRAW_CONST(IDENTITY_SHADER);
-
-extern "C" void LIBDRAW_SYMBOL(clear)(Image i);
-extern "C" Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
-extern "C" void LIBDRAW_SYMBOL(paint)(Image img);
-extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);

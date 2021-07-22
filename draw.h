@@ -1,3 +1,21 @@
+// Copyright (c) 2021 elucent
+
+// This software is provided 'as-is', without any express or implied
+// warranty. In no event will the authors be held liable for any damages
+// arising from the use of this software.
+
+// Permission is granted to anyone to use this software for any purpose,
+// including commercial applications, and to alter it and redistribute it
+// freely, subject to the following restrictions:
+
+// 1. The origin of this software must not be misrepresented; you must not
+//    claim that you wrote the original software. If you use this software
+//    in a product, an acknowledgment in the product documentation would be
+//    appreciated but is not required.
+// 2. Altered source versions must be plainly marked as such, and must not be
+//    misrepresented as being the original software.
+// 3. This notice may not be removed or altered from any source distribution.
+
 #ifndef _LIB_DRAW_H
 #define _LIB_DRAW_H
 
@@ -20,12 +38,28 @@ extern "C" double LIBDRAW_SYMBOL(seconds)();
 
 using Image = int;
 extern "C" Image LIBDRAW_SYMBOL(image)(const char* path);
-extern "C" Image LIBDRAW_SYMBOL(newimage)(int w, int h);
-extern "C" Image LIBDRAW_SYMBOL(subimage)(Image i, int x, int y, int w, int h);
+extern "C" Image LIBDRAW_SYMBOL(newimage)(int width, int height);
+extern "C" Image LIBDRAW_SYMBOL(subimage)(Image i, int x, int y, int width, int height);
 extern "C" int LIBDRAW_SYMBOL(width)(Image i);
 extern "C" int LIBDRAW_SYMBOL(height)(Image i);
 extern "C" Image LIBDRAW_CONST(SCREEN);
 extern "C" Image LIBDRAW_CONST(BLANK);
+
+enum TextureType {
+    LIBDRAW_CONST(TEX_NET),
+    LIBDRAW_CONST(TEX_AUTO),
+    LIBDRAW_CONST(TEX_STRETCH)
+};
+
+struct Texture {
+    Image img : 28;
+    Image img2 : 28;
+    TextureType type : 8;
+};
+
+extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img);
+extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img);
+extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img);
 
 // Colors
 
@@ -34,17 +68,17 @@ extern "C" const Color
     LIBDRAW_CONST(RED), LIBDRAW_CONST(ORANGE), LIBDRAW_CONST(YELLOW), LIBDRAW_CONST(LIME), 
     LIBDRAW_CONST(GREEN), LIBDRAW_CONST(CYAN), LIBDRAW_CONST(BLUE), LIBDRAW_CONST(INDIGO), 
     LIBDRAW_CONST(PURPLE), LIBDRAW_CONST(MAGENTA), LIBDRAW_CONST(PINK), LIBDRAW_CONST(BROWN), 
-    LIBDRAW_CONST(WHITE), LIBDRAW_CONST(SILVER), LIBDRAW_CONST(GRAY), LIBDRAW_CONST(BLACK);
-extern "C" Color LIBDRAW_SYMBOL(rgb)(int r, int g, int b);
-extern "C" Color LIBDRAW_SYMBOL(rgba)(int r, int g, int b, int a);
+    LIBDRAW_CONST(WHITE), LIBDRAW_CONST(GRAY), LIBDRAW_CONST(BLACK), LIBDRAW_CONST(CLEAR);
+extern "C" Color LIBDRAW_SYMBOL(rgba)(int red, int green, int blue, int alpha);
+extern "C" Color LIBDRAW_SYMBOL(rgb)(int red, int green, int blue);
 extern "C" void LIBDRAW_SYMBOL(color)(Color c);
 
 // 2D Drawing
 
-extern "C" void LIBDRAW_SYMBOL(rect)(float x, float y, float w, float h);
-extern "C" void LIBDRAW_SYMBOL(polygon)(float x, float y, float r, int n);
-extern "C" void LIBDRAW_SYMBOL(circle)(float x, float y, float r);
-extern "C" void LIBDRAW_SYMBOL(sprite)(float x, float y, Image img);
+extern "C" void LIBDRAW_SYMBOL(rect)(float x, float y, float width, float height);
+extern "C" void LIBDRAW_SYMBOL(polygon)(float x, float y, float radius, int sides);
+extern "C" void LIBDRAW_SYMBOL(circle)(float x, float y, float radius);
+extern "C" void LIBDRAW_SYMBOL(sprite)(float x, float y, Image i);
 extern "C" void LIBDRAW_SYMBOL(font)(Image i);
 extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str);
 extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width);
@@ -122,34 +156,20 @@ extern "C" void LIBDRAW_SYMBOL(endstate)();
 
 // 3D Drawing
 
-enum TextureType {
-    LIBDRAW_CONST(TEX_NET),
-    LIBDRAW_CONST(TEX_AUTO),
-    LIBDRAW_CONST(TEX_STRETCH)
-};
-
-struct Texture {
-    Image img;
-    TextureType type;
-};
-
-extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img);
-extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img);
-extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img);
-extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Texture img);
-extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image img);
-extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float w, float h, float l, Edge edge, Texture img);
-extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float w, float h, float l, int n, Axis axis, Texture img);
-extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float w, float h, float l, Axis axis, Texture img);
-extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float w, float h, float l, int n, Direction dir, Texture img);
-extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float w, float h, float l, Direction dir, Texture img);
-extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float w, float h, float l, int m, int n, Texture img);
-extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float w, float h, float l, Texture img);
+extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float width, float height, float length, Texture img);
+extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image i);
+extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float width, float height, float length, Edge edge, Texture img);
+extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float width, float height, float length, int sides, Axis axis, Texture img);
+extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float width, float height, float length, Axis axis, Texture img);
+extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float width, float height, float length, int sides, Direction dir, Texture img);
+extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float width, float height, float length, Direction dir, Texture img);
+extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float width, float height, float length, int hsides, int vsides, Texture img);
+extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float width, float height, float length, Texture img);
 
 // Camera
 
-extern "C" void LIBDRAW_SYMBOL(ortho)(float w, float h);
-extern "C" void LIBDRAW_SYMBOL(frustum)(float w, float h, float fov);
+extern "C" void LIBDRAW_SYMBOL(ortho)(float width, float height);
+extern "C" void LIBDRAW_SYMBOL(frustum)(float width, float height, float fov);
 extern "C" void LIBDRAW_SYMBOL(pan)(float x, float y, float z);
 extern "C" void LIBDRAW_SYMBOL(tilt)(float degrees, Axis axis);
 extern "C" void LIBDRAW_SYMBOL(snap)(float x, float y, float z);
@@ -165,7 +185,7 @@ extern "C" Model LIBDRAW_SYMBOL(sketch)();
 extern "C" void LIBDRAW_SYMBOL(sketchto)(Model model);
 extern "C" void LIBDRAW_SYMBOL(flush)();
 // TODO : extern "C" Model LIBDRAW_SYMBOL(loadobj)(const char* path);
-extern "C" void LIBDRAW_SYMBOL(render)(Model sketch, Image img);
+extern "C" void LIBDRAW_SYMBOL(render)(Model model, Image img);
 
 // Effects
 
@@ -175,12 +195,11 @@ extern "C" const char* LIBDRAW_CONST(DEFAULT_VSH);
 extern "C" const char* LIBDRAW_CONST(DEFAULT_FSH);
 extern "C" Shader LIBDRAW_CONST(DEFAULT_SHADER);
 
-extern "C" void LIBDRAW_SYMBOL(clear)(Image img);
 extern "C" Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
-extern "C" void LIBDRAW_SYMBOL(fog)(Color color, float density);
-extern "C" void LIBDRAW_SYMBOL(nofog)();
 extern "C" void LIBDRAW_SYMBOL(paint)(Image img);
 extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);
+extern "C" void LIBDRAW_SYMBOL(fog)(Color color, float range);
+extern "C" void LIBDRAW_SYMBOL(nofog)();
 
 // Input
 
