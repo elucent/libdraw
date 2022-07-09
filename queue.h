@@ -32,7 +32,15 @@ enum StepType {
     STEP_RENDER,
     STEP_BEGIN,
     STEP_FOG,
-    STEP_END
+    STEP_END,
+    STEP_SET_LIGHT,
+    STEP_OPACITY,
+    STEP_UNIFORMI,
+    STEP_UNIFORMF,
+    STEP_UNIFORMV2,
+    STEP_UNIFORMV3,
+    STEP_UNIFORMV4,
+    STEP_UNIFORMTEX
 };
 
 struct Step {
@@ -62,6 +70,14 @@ struct Step {
         struct { float x, y, z; } translate;
         struct { Model model; Image img; } render;
         struct { Color color; float range; } fog;
+        struct { Opacity opacity; } opacity;
+        struct { Shader shader; const char* name; int i; } uniformi;
+        struct { Shader shader; const char* name; float f; } uniformf;
+        struct { Shader shader; const char* name; float x, y; } uniformv2;
+        struct { Shader shader; const char* name; float x, y, z; } uniformv3;
+        struct { Shader shader; const char* name; float x, y, z, w; } uniformv4;
+        struct { Shader shader; const char* name; int id; Image i; } uniformtex;
+        struct { float x, y, z; } set_light;
     } data;
 };
 

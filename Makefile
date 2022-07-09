@@ -6,8 +6,8 @@ OBJS := $(patsubst %.cpp,%.o,$(SRCS))
 
 CXX := g++
 CXXHEADERS := -I. -Ilib/util
-CXXFLAGS := $(CXXHEADERS) -std=c++11 -Os -ffast-math -fno-rtti -fno-exceptions -Wno-null-dereference
-LDFLAGS := -Llib/SOIL -Llib/GLFW -Llib -L.
+CXXFLAGS := $(CXXHEADERS) -std=c++17 -Os -ffast-math -fno-rtti -fno-exceptions -Wno-null-dereference
+LDFLAGS := -L.
 
 ifeq '$(findstring ;,$(PATH))' ';'
     OS := Windows
@@ -19,19 +19,19 @@ else
 endif
 
 ifeq (${OS}, Linux)
-	LDLIBS := -lglfw -lGL -ldl
+	LDLIBS := -lglfw -lGL -ldl -lSOIL
 	LIBNAME := libdraw.so
 endif
 
 ifeq (${OS}, MSYS)
-	LDLIBS := -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lglfw3
-	LDFLAGS += -static -static-libgcc -static-libstdc++ -L/mingw64/lib 
+	LDLIBS :=  -lSOIL -lucrt -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lglfw3
+	LDFLAGS += -L/mingw64/lib -L/mingw64/x86_64-w64-mingw32/lib
 	LIBNAME := libdraw.dll
 endif
 
 ifeq (${OS}, MinGW)
-	LDLIBS := -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lglfw3
-	LDFLAGS += -static -static-libgcc -static-libstdc++ -L/mingw64/lib 
+	LDLIBS := -lglfw3 -lopengl32 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lglfw3.dll -lSOIL
+	LDFLAGS += -L/mingw64/lib 
 	LIBNAME := libdraw.dll
 endif
 
@@ -45,10 +45,10 @@ libdraw.a: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
 	rm -r __make_tmp
 
 libdraw.so: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
-	${CXX} -fPIC -shared ${LDFLAGS} $^ -o $@ -lSOIL ${LDLIBS}
+	${CXX} -fPIC -shared ${LDFLAGS} $^ -o $@ ${LDLIBS}
 
 libdraw.dll: $(OBJS) lib/GLAD/glad.o lib/util/hash.o lib/util/io.o lib/util/str.o
-	${CXX} -fPIC -shared ${LDFLAGS} $^ -o $@ -lSOIL ${LDLIBS}
+	${CXX} -fPIC -shared ${LDFLAGS} -LC:/Windows/System32 -L/mingw64/lib $^ -o $@ -lopengl32 -lvcruntime140 -lgdi32 -lkernel32 -luser32 -lcomdlg32 -lSOIL -lglfw3 
 	
 test/%: test/%.cpp $(LIBNAME)
 	$(CXX) $(CXXFLAGS) -Wl,-rpath=$$(pwd) -L. $< -o $@ -ldraw

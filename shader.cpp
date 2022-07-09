@@ -28,16 +28,12 @@ const char* LIBDRAW_CONST(DEFAULT_VSH) = R"(
     out vec4 v_pos;
 
     void main() {
-        v_pos = view * model * vec4(pos, 1);
-        gl_Position = projection * v_pos;
+        v_pos = model * vec4(pos, 1);
+        gl_Position = projection * view * v_pos;
         float bright = (-dot(light, normalize(mat3(model) * norm)) + 2) / 3;
         v_col = vec4(bright * col.rgb, col.a);
         v_uv = uv;
-
-        if (inverted == 1) {
-            v_spr = vec4(spr.x, spr.y + spr.w, spr.z, -spr.w);
-        }
-        else v_spr = vec4(spr.x, spr.y, spr.z, spr.w);
+        v_spr = vec4(spr.x, spr.y, spr.z, spr.w);
     }
 )";
 
@@ -58,7 +54,7 @@ const char* LIBDRAW_CONST(DEFAULT_FSH) = R"(
         vec2 fract_uv = fract(v_uv);
         vec2 fixed_uv = vec2(v_spr.x + v_spr.z * fract_uv.x, v_spr.y + v_spr.w * fract_uv.y);
         color = v_col * texture2D(tex, fixed_uv);
-        if (color.a < 0.001) discard;
+        if (color.a <= 0.00390625) discard;
 
         if (fog_range > 0.01) {
             float v_dist = sqrt(v_pos.x * v_pos.x + v_pos.y * v_pos.y + v_pos.z * v_pos.z);

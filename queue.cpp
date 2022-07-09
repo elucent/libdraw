@@ -17,6 +17,7 @@ static float lightx = 0.218218, lighty = -0.872872, lightz = 0.436436;
 static bool mode3d = false;
 static Model rendermodel;
 bool invert = false;
+static float near = 0, far = 0;
 static float yaw = 0, pitch = 0, roll = 0;
 static float camerax = 0, cameray = 0, cameraz = 0;
 static Image currentfont;
@@ -108,19 +109,18 @@ static void translate(float matrix[4][4], float x, float y, float z) {
 }
 
 static void ortho(float matrix[4][4], float w, float h) {
-    float near = -1000, far = 1000;
     float ortho[4][4] = {
         { 2 / w, 0, 0, 0 },
-        { 0, -2 / h, 0, 0 },
+        { 0, 2 / h, 0, 0 },
         { 0, 0, -2 / (far - near), 0 },
-        { -1, 1, -(far + near) / (far - near), 1 }
+        { -1, -1, -(far + near) / (far - near), 1 }
     };
+    identity(matrix);
     matmult(matrix, ortho);
 }
 
 static void frustum(float matrix[4][4], float w, float h, float fov) {
-    float aspect = w / h, near = 0.125, far = 1024, 
-        top = near * tan(fov * pi / 180), bottom = -top, right = aspect * top, left = -right;
+    float aspect = w / h, top = near * tan(fov * pi / 180), bottom = -top, right = aspect * top, left = -right;
     float frustum[4][4] = {
         { 2 * near / (right - left), 0, 0, 0 },
         { 0, 2 * near / (top - bottom), 0, 0 },
@@ -133,6 +133,8 @@ static void frustum(float matrix[4][4], float w, float h, float fov) {
     //     { 0, 0, -(far + near) / (far - near), 2 * far * near / (near - far) },
     //     { 0, 0, -1, 0 }
     // };
+    glCullFace(GL_BACK);
+    identity(matrix);
     matmult(matrix, frustum);
 }
 
@@ -143,11 +145,9 @@ void enqueue(const Step& step) {
 }
 
 static void drawbuf(Buffer& buf) {
-    glUniform1i(find_uniform("inverted"), invert ? 1 : 0);
     if (!buf.empty()) {
         buf.draw();
     }
-    glUniform1i(find_uniform("inverted"), 0);
 }
 
 static bool stateful(const Step& step) {
@@ -168,15 +168,30 @@ static bool stateful(const Step& step) {
         case STEP_BOARD:
             return !mode3d || findimg(step.data.board.img).id != texture;
         case STEP_CUBE:
-            return !mode3d || findimg(step.data.cube.tex.img).id != texture;
+            return !mode3d 
+                || findimg(step.data.cube.tex.itop).id != texture
+                || findimg(step.data.cube.tex.iside).id != texture
+                || findimg(step.data.cube.tex.ibottom).id != texture;
         case STEP_SLANT:
-            return !mode3d || findimg(step.data.slant.tex.img).id != texture;
+            return !mode3d 
+                || findimg(step.data.slant.tex.itop).id != texture
+                || findimg(step.data.slant.tex.iside).id != texture
+                || findimg(step.data.slant.tex.ibottom).id != texture;
         case STEP_PRISM:
-            return !mode3d || findimg(step.data.prism.tex.img).id != texture;
+            return !mode3d 
+                || findimg(step.data.prism.tex.itop).id != texture
+                || findimg(step.data.prism.tex.iside).id != texture
+                || findimg(step.data.prism.tex.ibottom).id != texture;
         case STEP_CONE:
-            return !mode3d || findimg(step.data.cone.tex.img).id != texture;
+            return !mode3d 
+                || findimg(step.data.cone.tex.iside).id != texture
+                || findimg(step.data.cone.tex.itop).id != texture
+                || findimg(step.data.cone.tex.ibottom).id != texture;
         case STEP_HEDRON:
-            return !mode3d || findimg(step.data.hedron.tex.img).id != texture;
+            return !mode3d 
+                || findimg(step.data.hedron.tex.iside).id != texture
+                || findimg(step.data.hedron.tex.itop).id != texture
+                || findimg(step.data.hedron.tex.ibottom).id != texture;
         case STEP_ORTHO:
         case STEP_FRUSTUM:
         case STEP_PAN:
@@ -188,14 +203,29 @@ static bool stateful(const Step& step) {
         case STEP_RENDER:
         case STEP_END:
         case STEP_FOG:
+        case STEP_OPACITY:
+        case STEP_UNIFORMI:
+        case STEP_UNIFORMF:
+        case STEP_UNIFORMV2:
+        case STEP_UNIFORMV3:
+        case STEP_UNIFORMV4:
+        case STEP_SET_LIGHT:
             return true;
         default:
             return false;
     }
 }
 
-static void bindtex(Image i) {
+// static void bindtex(Image i) {
+//     if (texture != findimg(i).id) {
+//         glBindTexture(GL_TEXTURE_2D, findimg(i).id);
+//         texture = findimg(i).id;
+//     }
+// }
+
+static void bindtex(Buffer& buf, Image i) {
     if (texture != findimg(i).id) {
+        drawbuf(buf), buf.reset();
         glBindTexture(GL_TEXTURE_2D, findimg(i).id);
         texture = findimg(i).id;
     }
@@ -206,7 +236,7 @@ static void plane(Buffer& buf,
     float hx, float hy, float hz, 
     float vx, float vy, float vz,
     Image i) {
-    bindtex(i);
+    bindtex(buf, i);
     ImageMeta* meta = &findimg(i);
     while (meta->parent > 0) meta = &findimg(meta->parent);
 
@@ -258,26 +288,26 @@ static float frem(float a, float b) {
 }
 
 static void autouv(Buffer& buf, float u, float v, float w, float h, float iw, float ih) {
-    float u_auto = frem(u, iw) * 2 / iw, v_auto = frem(v, ih) * 2 / ih, w_auto = w / iw, h_auto = h / ih;
-    buf.uv(u_auto + w_auto, v_auto + h_auto);
-    buf.uv(u_auto, v_auto + h_auto);
-    buf.uv(u_auto, v_auto);
+    float u_auto = frem(u, iw) / iw, v_auto = frem(ih - v, ih) / ih, w_auto = w / iw, h_auto = h / ih;
     buf.uv(u_auto, v_auto);
     buf.uv(u_auto + w_auto, v_auto);
     buf.uv(u_auto + w_auto, v_auto + h_auto);
+    buf.uv(u_auto + w_auto, v_auto + h_auto);
+    buf.uv(u_auto, v_auto + h_auto);
+    buf.uv(u_auto, v_auto);
 }
 
 static void stretchuv(Buffer& buf) {
-    buf.uv(1, 1);
-    buf.uv(0, 1);
-    buf.uv(0, 0);
-    buf.uv(0, 0);
     buf.uv(1, 0);
+    buf.uv(0, 0);
+    buf.uv(0, 1);
+    buf.uv(0, 1);
     buf.uv(1, 1);
+    buf.uv(1, 0);
 }
 
 static void polygon(Buffer& buf, float x, float y, float r, float n) {
-    bindtex(BLANK);
+    bindtex(buf, BLANK);
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1;
     x -= ox * r, y -= oy * r;
     float dt = -0.5 * pi;
@@ -293,15 +323,29 @@ static void polygon(Buffer& buf, float x, float y, float r, float n) {
     }
 }
 
+struct TexProps {
+    float u, v, iw, ih, uw, vh;
+
+    void use(Image i) {
+        ImageMeta* meta = &findimg(i);
+        while (meta->parent > 0) meta = &findimg(meta->parent);
+        u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
+        iw = float(findimg(i).w), ih = float(findimg(i).h);
+        uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
+    }
+
+    void tspr(Buffer& buf) {
+        for (int i = 0; i < 3; i ++) buf.spr(u, v, uw, vh);
+    }
+
+    void qspr(Buffer& buf) {
+        for (int i = 0; i < 6; i ++) buf.spr(u, v, uw, vh);
+    }
+};
+
 static void cube(Buffer& buf, float x, float y, float z, float w, float h, float l, Texture tex) {
-    Image i = tex.img;
-    bindtex(i);
-    ImageMeta* meta = &findimg(i);
-    while (meta->parent > 0) meta = &findimg(meta->parent);
+    bindtex(buf, tex.iside);
     float dx = w / 2, dy = h / 2, dz = l / 2;
-    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
-    float iw = float(findimg(i).w), ih = float(findimg(i).h);
-    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
 
@@ -337,41 +381,45 @@ static void cube(Buffer& buf, float x, float y, float z, float w, float h, float
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
     for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
+    TexProps tp;
+
+    x -= dx;
+    y -= dy;
+    z -= dz;
+
     switch (tex.type) {
         default:
-        case LIBDRAW_CONST(TEX_NET):
-            scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-            scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-            scaleduv(buf, h * 2 + l, h, w, l, iw, ih); // negative y
-            scaleduv(buf, h, h, w, l, iw, ih); // positive y
-            scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-            scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+        case LIBDRAW_CONST(AUTO_CUBE):
+        case LIBDRAW_CONST(AUTO_PILLAR):
+        case LIBDRAW_CONST(AUTO_SIDED):
+            tp.use(tex.iside), bindtex(buf, tex.iside), tp.qspr(buf); tp.qspr(buf);
+            autouv(buf, z, y, l, h, tp.iw, tp.ih); // X axis
+            autouv(buf, z, y, -l, h, -tp.iw, tp.ih);
+            tp.use(tex.ibottom), bindtex(buf, tex.ibottom), tp.qspr(buf);
+            autouv(buf, z, x, -l, w, -tp.iw, tp.ih); // Y axis
+            tp.use(tex.itop), bindtex(buf, tex.itop), tp.qspr(buf);
+            autouv(buf, z, x, l, w, tp.iw, tp.ih);
+            tp.use(tex.iside), bindtex(buf, tex.iside), tp.qspr(buf); tp.qspr(buf);
+            autouv(buf, x, y, -w, h, -tp.iw, tp.ih); // Z axis
+            autouv(buf, x, y, w, h, tp.iw, tp.ih);
             break;
-        case LIBDRAW_CONST(TEX_AUTO):
-            autouv(buf, z, y, l, h, iw, ih);
-            autouv(buf, z, y, l, h, iw, ih);
-            autouv(buf, z, x, l, w, iw, ih);
-            autouv(buf, z, x, l, w, iw, ih);
-            autouv(buf, x, y, w, h, iw, ih);
-            autouv(buf, x, y, w, h, iw, ih);
-            break;
-        case LIBDRAW_CONST(TEX_STRETCH):
-            for (int i = 0; i < 6; i ++) stretchuv(buf);
+        case LIBDRAW_CONST(STRETCH_CUBE):
+        case LIBDRAW_CONST(STRETCH_PILLAR):
+        case LIBDRAW_CONST(STRETCH_SIDED):
+            tp.use(tex.iside), bindtex(buf, tex.iside), tp.qspr(buf); tp.qspr(buf);
+            for (int i = 0; i < 2; i ++) stretchuv(buf);
+            tp.use(tex.ibottom), bindtex(buf, tex.ibottom), tp.qspr(buf);
+            stretchuv(buf);
+            tp.use(tex.itop), bindtex(buf, tex.itop), tp.qspr(buf);
+            stretchuv(buf);
+            tp.use(tex.iside), bindtex(buf, tex.iside), tp.qspr(buf); tp.qspr(buf);
+            for (int i = 0; i < 2; i ++) stretchuv(buf);
             break;
     }
-    
-    for (int i = 0; i < 36; i ++) buf.spr(u, v, uw, vh);
 }
 
 static void prism(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Axis axis, Texture tex) {
-    Image i = tex.img;
-    bindtex(i);
-    ImageMeta* meta = &findimg(i);
-    while (meta->parent > 0) meta = &findimg(meta->parent);
     float dx = w / 2, dy = h / 2, dz = l / 2;
-    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
-    float iw = float(findimg(i).w), ih = float(findimg(i).h);
-    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
 
@@ -403,13 +451,18 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
     float frontx = x + lv[0], fronty = y + lv[1], frontz = z + lv[2];
     float backx = x - lv[0], backy = y - lv[1], backz = z - lv[2];
 
+    TexProps tp;
+
     // front
+    bindtex(buf, tex.itop);
+    tp.use(tex.itop);
+    
     for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         for (int j = 0; j < 3; j ++) {
             buf.norm(ln[0], ln[1], ln[2]); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u, v, uw * (endw / iw), vh * (endh / ih));
+            buf.spr(tp.u, tp.v, tp.uw * (endw / tp.iw), tp.vh * (endh / tp.ih));
         }
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
         buf.pos(frontx, fronty, frontz);
@@ -421,12 +474,15 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
     }
 
     // back
+    bindtex(buf, tex.ibottom);
+    tp.use(tex.ibottom);
+
     for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         for (int j = 0; j < 3; j ++) {
             buf.norm(-ln[0], -ln[1], -ln[2]); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u + (2 * sidew / 3 / iw) * uw, v + (endh / ih + sideh / ih) * vh, uw * (endw / iw), vh * (endh / ih));
+            buf.spr(tp.u + (2 * sidew / 3 / tp.iw) * tp.uw, tp.v + (endh / tp.ih + sideh / tp.ih) * tp.vh, tp.uw * (endw / tp.iw), tp.vh * (endh / tp.ih));
         }
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
         buf.pos(backx, backy, backz);
@@ -438,6 +494,9 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
     }
 
     // sides
+    bindtex(buf, tex.iside);
+    tp.use(tex.iside);
+
     for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
@@ -448,7 +507,7 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
                 0.5 * ca1 * hn[2] + ca2 * hn[2] + 0.5 * sa1 * vn[2] + sa2 * vn[2]
             ); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u, v + (endh / ih) * vh, uw * (sidew / iw), vh * (sideh / ih));
+            buf.spr(tp.u, tp.v + (endh / tp.ih) * tp.vh, tp.uw * (sidew / tp.iw), tp.vh * (sideh / tp.ih));
         }
         
         buf.pos(backx + ca1 * hv[0] + sa1 * vv[0], backy + ca1 * hv[1] + sa1 * vv[1], backz + ca1 * hv[2] + sa1 * vv[2]);
@@ -464,15 +523,8 @@ static void prism(Buffer& buf, float x, float y, float z, float w, float h, floa
 }
 
 static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, float l, int n, Direction dir, Texture tex) {
-    Image i = tex.img;
     Axis axis = (Axis)(dir / 2);
-    bindtex(i);
-    ImageMeta* meta = &findimg(i);
-    while (meta->parent > 0) meta = &findimg(meta->parent);
     float dx = w / 2, dy = h / 2, dz = l / 2;
-    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
-    float iw = float(findimg(i).w), ih = float(findimg(i).h);
-    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
 
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
@@ -508,13 +560,17 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
     float frontx = x + lv[0], fronty = y + lv[1], frontz = z + lv[2];
     float backx = x - lv[0], backy = y - lv[1], backz = z - lv[2];
 
+    TexProps tp;
+
     // front
+    bindtex(buf, tex.itop);
+    tp.use(tex.itop);
     if (flipped) for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         for (int j = 0; j < 3; j ++) {
             buf.norm(ln[0], ln[1], ln[2]); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u, v, uw * (endw / iw), vh * (endh / ih));
+            buf.spr(tp.u, tp.v, tp.uw * (endw / tp.iw), tp.vh * (endh / tp.ih));
         }
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
         buf.pos(frontx, fronty, frontz);
@@ -526,12 +582,14 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
     }
 
     // back
+    bindtex(buf, tex.ibottom);
+    tp.use(tex.ibottom);
     if (!flipped) for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         for (int j = 0; j < 3; j ++) {
             buf.norm(-ln[0], -ln[1], -ln[2]); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u, v, uw * (endw / iw), vh * (endh / ih));
+            buf.spr(tp.u, tp.v, tp.uw * (endw / tp.iw), tp.vh * (endh / tp.ih));
         }
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
         buf.pos(backx, backy, backz);
@@ -543,6 +601,8 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
     }
 
     // sides
+    bindtex(buf, tex.iside);
+    tp.use(tex.iside);
     for (int i = 0; i < n; i ++) {
         float a1 = 2 * pi * i / n - 0.5 * pi, a2 = 2 * pi * (i + 1) / n - 0.5 * pi;
         float sa1 = sin(a1), ca1 = cos(a1), sa2 = sin(a2), ca2 = cos(a2);
@@ -555,7 +615,7 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
         for (int j = 0; j < 3; j ++) {
             buf.norm(nx, ny, nz); 
             buf.col(red, green, blue, alpha); 
-            buf.spr(u, v + (endh / ih) * vh, uw * (sidew / iw), vh * (sideh / ih));
+            buf.spr(tp.u, tp.v + (endh / tp.ih) * tp.vh, tp.uw * (sidew / tp.iw), tp.vh * (sideh / tp.ih));
         }
         
         if (flipped) {
@@ -579,16 +639,28 @@ static void pyramid(Buffer& buf, float x, float y, float z, float w, float h, fl
 }
 
 static void hedron(Buffer& buf, float x, float y, float z, float w, float h, float l, int m, int n, Texture tex) {
-    Image i = tex.img;
-    bindtex(i);
-    ImageMeta* meta = &findimg(i);
-    while (meta->parent > 0) meta = &findimg(meta->parent);
     float dx = w / 2, dy = h / 2, dz = l / 2;
-    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
-    float iw = float(findimg(i).w), ih = float(findimg(i).h);
-    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
+    
+    float* mercator = new float[n + 1];
+    for (int i = 1; i < n; i ++) {
+        float phi = (float(i) / n - 0.5f) * pi;
+        mercator[i] = fmin(10.0f, log(abs(1 / cos(phi) + tan(phi))));
+    }
+    mercator[0] = -10.0f;
+    mercator[n] = 10.0f;  
+    for (int i = 0; i <= n; i ++) mercator[i] += 10.0f; 
+    float msum = 0;
+    for (int i = 0; i <= n; i ++) {
+        msum += mercator[i];
+        if (i > 1) mercator[i] += mercator[i - 1];
+    }
+    for (int i = 0; i <= n; i ++) mercator[i] /= msum;
+
+    TexProps tp;
+    bindtex(buf, tex.iside);
+    tp.use(tex.iside);
 
     for (int i = 0; i < m; i ++) {
         for (int j = 0; j < n; j ++) {
@@ -602,7 +674,7 @@ static void hedron(Buffer& buf, float x, float y, float z, float w, float h, flo
             for (int k = 0; k < 6; k ++) {
                 buf.norm(nx, ny, nz); 
                 buf.col(red, green, blue, alpha); 
-                buf.spr(u, v, uw * (3 * w / iw), vh * (h / ih));
+                buf.spr(tp.u, tp.v, tp.uw, tp.vh);
             }
             buf.pos(x + dx * cp1 * sy1, y + dy * sp1, z + dz * cp1 * cy1);
             buf.pos(x + dx * cp1 * sy2, y + dy * sp1, z + dz * cp1 * cy2);
@@ -610,18 +682,23 @@ static void hedron(Buffer& buf, float x, float y, float z, float w, float h, flo
             buf.pos(x + dx * cp2 * sy2, y + dy * sp2, z + dz * cp2 * cy2);
             buf.pos(x + dx * cp2 * sy1, y + dy * sp2, z + dz * cp2 * cy1);
             buf.pos(x + dx * cp1 * sy1, y + dy * sp1, z + dz * cp1 * cy1);
-            buf.uv(float(i) / m, float(j) / n);
-            buf.uv(float(i + 1) / m, float(j) / n);
-            buf.uv(float(i + 1) / m, float(j + 1) / n);
-            buf.uv(float(i + 1) / m, float(j + 1) / n);
-            buf.uv(float(i) / m, float(j + 1) / n);
-            buf.uv(float(i) / m, float(j) / n);
+            
+            // mercator scaling
+
+            buf.uv(float(i) / m, mercator[j]);
+            buf.uv(float(i + 1) / m, mercator[j]);
+            buf.uv(float(i + 1) / m, mercator[j + 1]);
+            buf.uv(float(i + 1) / m, mercator[j + 1]);
+            buf.uv(float(i) / m, mercator[j + 1]);
+            buf.uv(float(i) / m, mercator[j]);
         }
     }
+
+    delete[] mercator;
 }
 
 static void text(Buffer& buf, float x, float y, const char* str, float width) {
-    bindtex(currentfont);
+    bindtex(buf, currentfont);
     int iw = ::width(currentfont), ih = ::height(currentfont);
     int cw = iw / 32, ch = ih / 32;
     float ox = x, oy = y;
@@ -701,7 +778,7 @@ static void scaleduvxtri(Buffer& buf, float u, float v, float w, float h, float 
 }
 
 static void autouvtri(Buffer& buf, float u, float v, float w, float h, float iw, float ih, bool flipu, bool flipv) {
-    float u_auto = frem(u, iw) * 2 / iw, v_auto = frem(v, ih) * 2 / ih, w_auto = w / iw, h_auto = h / ih;
+    float u_auto = frem(u, iw) / iw, v_auto = frem(ih - v, ih) / ih, w_auto = w / iw, h_auto = h / ih;
     if (flipu || flipv) buf.uv(u_auto, v_auto + h_auto);
     if (flipu || !flipv) buf.uv(u_auto, v_auto);
     if (!flipu || !flipv) buf.uv(u_auto + w_auto, v_auto);
@@ -716,14 +793,7 @@ static void stretchuvtri(Buffer& buf, bool flipu, bool flipv) {
 }
 
 static void slant(Buffer& buf, float x, float y, float z, float w, float h, float l, Edge edge, Texture tex) {
-    Image i = tex.img;
-    bindtex(i);
-    ImageMeta* meta = &findimg(i);
-    while (meta->parent > 0) meta = &findimg(meta->parent);
     float dx = w / 2, dy = h / 2, dz = l / 2;
-    float u = float(findimg(i).x) / meta->w, v = float(findimg(i).y) / meta->h;
-    float iw = float(findimg(i).w), ih = float(findimg(i).h);
-    float uw = float(findimg(i).w) / meta->w, vh = float(findimg(i).h) / meta->h;
     float ox = int(orig) % 3 - 1, oy = int(orig) % 9 / 3 - 1, oz = int(orig) / 9 - 1;
     x -= w * ox / 2; y -= h * oy / 2; z -= l * oz / 2;
 
@@ -806,6 +876,8 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
     normalize(nx, ny, nz);
     bool cullX = w > l + (edge % 2);
 
+    TexProps tp;
+
     switch (edge) {
         case TOP_LEFT_EDGE: {
             buf.pos(x - dx, y - dy, z - dz); buf.pos(x - dx, y - dy, z + dz); buf.pos(x - dx, y + dy, z + dz); // nx
@@ -822,26 +894,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, false);
-                    scaleduvtri(buf, h, h + l, l, h, iw, ih, false, false);
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih);
+                    if (l * h > w * l) autouv(buf, z, y, -l, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
+                    autouv(buf, z, x, l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, x, y, -w, h, tp.iw, tp.ih, true, false);
+                    autouvtri(buf, x, y, w, h, tp.iw, tp.ih, false, false);
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih);
-                    if (l * h > w * l) autouv(buf, z, y, l, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    autouvtri(buf, x, y, w, h, iw, ih, true, false);
-                    autouvtri(buf, x, y, w, h, iw, ih, false, false);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, true, false);
                     stretchuvtri(buf, false, false);
                     break;
@@ -863,26 +941,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvxtri(buf, h, h, -h, w, iw, ih, true, false);
-                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, false);
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, z, y, l, h, tp.iw, tp.ih, true, false);
+                    autouvtri(buf, z, y, -l, h, tp.iw, tp.ih, false, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
+                    autouv(buf, z, x, l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    if (w * h > w * l) autouv(buf, x, y, -w, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih);
                     break;
-                case TEX_AUTO:
-                    autouvtri(buf, z, y, l, h, iw, ih, true, false);
-                    autouvtri(buf, z, y, l, h, iw, ih, false, false);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, x, y, w, h, iw, ih);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, true, false);
                     stretchuvtri(buf, false, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
                     break;
@@ -904,26 +988,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, false);
-                    scaleduvtri(buf, h, h + l, l, h, iw, ih, true, false);
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih);
+                    if (l * h > w * l) autouv(buf, z, y, -l, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
+                    autouv(buf, z, x, l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, x, y, -w, h, tp.iw, tp.ih, false, false);
+                    autouvtri(buf, x, y, w, h, tp.iw, tp.ih, true, false);
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih);
-                    if (l * h > w * l) autouv(buf, z, y, l, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    autouvtri(buf, x, y, w, h, iw, ih, false, false);
-                    autouvtri(buf, x, y, w, h, iw, ih, true, false);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, false, false);
                     stretchuvtri(buf, true, false);
                     break;
@@ -945,26 +1035,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvxtri(buf, h, h, -h, w, iw, ih, false, false);
-                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, false);
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, z, y, l, h, tp.iw, tp.ih, false, false);
+                    autouvtri(buf, z, y, -l, h, tp.iw, tp.ih, true, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
+                    autouv(buf, z, x, l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    if (w * h > w * l) autouv(buf, x, y, -w, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih);
                     break;
-                case TEX_AUTO:
-                    autouvtri(buf, z, y, l, h, iw, ih, false, false);
-                    autouvtri(buf, z, y, l, h, iw, ih, true, false);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, x, y, w, h, iw, ih);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, false, false);
                     stretchuvtri(buf, true, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
                     break;
@@ -993,30 +1089,37 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, true); // negative y
-                    scaleduvtri(buf, h, h, w, l, iw, ih, false, true); // positive y
-                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-                    if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih); // negative x
+                    if (!cullX) autouv(buf, z, y, -l, h, tp.iw, tp.ih); // positive x
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
+                    autouvtri(buf, z, x, -l, w, tp.iw, tp.ih, true, true); // negative y
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
+                    autouvtri(buf, z, x, l, w, tp.iw, tp.ih, false, true); // positive y
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    autouv(buf, x, y, -w, h, tp.iw, tp.ih); // negative z
+                    if (cullX) autouv(buf, x, y, w, h, tp.iw, tp.ih); // positive z
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih); // negative x
-                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // positive x
-                    autouvtri(buf, z, x, l, w, iw, ih, true, true); // negative y
-                    autouvtri(buf, z, x, l, w, iw, ih, false, true); // positive y
-                    autouv(buf, x, y, w, h, iw, ih); // negative z
-                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // positive z
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
                     stretchuv(buf);
-                    if (!cullX) stretchuv(buf);
+                    if (!cullX) tp.qspr(buf), stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
                     stretchuvtri(buf, true, true);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
                     stretchuvtri(buf, false, true);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
                     stretchuv(buf);
-                    if (cullX) stretchuv(buf);
+                    if (cullX) tp.qspr(buf), stretchuv(buf);
                     break;
             }
             break;
@@ -1044,30 +1147,37 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, true, false); // negative y
-                    scaleduvtri(buf, h, h, w, l, iw, ih, false, false); // positive y
-                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-                    if (cullX) scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (!cullX) tp.qspr(buf), autouv(buf, z, y, l, h, tp.iw, tp.ih); // negative x
+                    autouv(buf, z, y, -l, h, tp.iw, tp.ih); // positive x
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
+                    autouvtri(buf, z, x, -l, w, tp.iw, tp.ih, true, false); // negative y
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
+                    autouvtri(buf, z, x, l, w, tp.iw, tp.ih, false, false); // positive y
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    autouv(buf, x, y, -w, h, tp.iw, tp.ih); // negative z
+                    if (cullX) tp.qspr(buf), autouv(buf, x, y, w, h, tp.iw, tp.ih); // positive z
                     break;
-                case TEX_AUTO:
-                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // negative x
-                    autouv(buf, z, y, l, h, iw, ih); // positive x
-                    autouvtri(buf, z, x, l, w, iw, ih, true, false); // negative y
-                    autouvtri(buf, z, x, l, w, iw, ih, false, false); // positive y
-                    autouv(buf, x, y, w, h, iw, ih); // negative z
-                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // positive z
-                    break;
-                case TEX_STRETCH:
-                    if (!cullX) stretchuv(buf);
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (!cullX) tp.qspr(buf), stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
                     stretchuvtri(buf, true, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
                     stretchuvtri(buf, false, false);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
                     stretchuv(buf);
-                    if (cullX) stretchuv(buf);
+                    if (cullX) tp.qspr(buf), stretchuv(buf);
                     break;
             }
             break;
@@ -1095,29 +1205,36 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    if (!cullX) scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, false); // negative y
-                    scaleduvtri(buf, h, h, w, l, iw, ih, true, false); // positive y
-                    if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (!cullX) tp.qspr(buf), autouv(buf, z, y, l, h, tp.iw, tp.ih); // negative x
+                    autouv(buf, z, y, -l, h, tp.iw, tp.ih); // positive x
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
+                    autouvtri(buf, z, x, -l, w, tp.iw, tp.ih, false, false); // negative y
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
+                    autouvtri(buf, z, x, l, w, tp.iw, tp.ih, true, false); // positive y
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (cullX) tp.qspr(buf), autouv(buf, x, y, -w, h, tp.iw, tp.ih); // negative z
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih); // positive z
                     break;
-                case TEX_AUTO:
-                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // negative x
-                    autouv(buf, z, y, l, h, iw, ih); // positive x
-                    autouvtri(buf, z, x, l, w, iw, ih, false, false); // negative y
-                    autouvtri(buf, z, x, l, w, iw, ih, true, false); // positive y
-                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // negative z
-                    autouv(buf, x, y, w, h, iw, ih); // positive z
-                    break;
-                case TEX_STRETCH:
-                    if (!cullX) stretchuv(buf);
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (!cullX) tp.qspr(buf), stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
                     stretchuvtri(buf, false, false);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
                     stretchuvtri(buf, true, false);
-                    if (cullX) stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (cullX) tp.qspr(buf), stretchuv(buf);
                     stretchuv(buf);
                     break;
             }
@@ -1146,29 +1263,36 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             if (cullX) for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    if (!cullX) scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduvtri(buf, h * 2 + w, h, w, l, iw, ih, false, true); // negative y
-                    scaleduvtri(buf, h, h, w, l, iw, ih, true, true); // positive y
-                    if (cullX) scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
-                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih); // negative x
+                    if (!cullX) tp.qspr(buf), autouv(buf, z, y, -l, h, tp.iw, tp.ih); // positive x
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
+                    autouvtri(buf, z, x, -l, w, tp.iw, tp.ih, false, true); // negative y
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
+                    autouvtri(buf, z, x, l, w, tp.iw, tp.ih, true, true); // positive y
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (cullX) tp.qspr(buf), autouv(buf, x, y, -w, h, tp.iw, tp.ih); // negative z
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih); // positive z
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih); // negative x
-                    if (!cullX) autouv(buf, z, y, l, h, iw, ih); // positive x
-                    autouvtri(buf, z, x, l, w, iw, ih, false, true); // negative y
-                    autouvtri(buf, z, x, l, w, iw, ih, true, true); // positive y
-                    if (cullX) autouv(buf, x, y, w, h, iw, ih); // negative z
-                    autouv(buf, x, y, w, h, iw, ih); // positive z
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
                     stretchuv(buf);
-                    if (!cullX) stretchuv(buf);
+                    if (!cullX) tp.qspr(buf), stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.tspr(buf);
                     stretchuvtri(buf, false, true);
+                    bindtex(buf, tex.itop), tp.use(tex.itop), tp.tspr(buf);
                     stretchuvtri(buf, true, true);
-                    if (cullX) stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf);
+                    if (cullX) tp.qspr(buf), stretchuv(buf);
                     stretchuv(buf);
                     break;
             }
@@ -1189,26 +1313,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h, h, -h, w, iw, ih); // negative x
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, true, true);
-                    scaleduvtri(buf, h, h + l, l, h, iw, ih, false, true);
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih);
+                    if (l * h > w * h) autouv(buf, z, y, -l, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
+                    autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, x, y, -w, h, tp.iw, tp.ih, true, true);
+                    autouvtri(buf, x, y, w, h, tp.iw, tp.ih, false, true);
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih);
-                    if (l * h > w * h) autouv(buf, z, y, l, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    autouvtri(buf, x, y, w, h, iw, ih, true, true);
-                    autouvtri(buf, x, y, w, h, iw, ih, false, true);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, true, true);
                     stretchuvtri(buf, false, true);
                     break;
@@ -1230,26 +1360,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvxtri(buf, h, h, -h, w, iw, ih, true, true);
-                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, false, true);
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduv(buf, h, h + l, l, h, iw, ih); // positive z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, z, y, l, h, tp.iw, tp.ih, true, true);
+                    autouvtri(buf, z, y, -l, h, tp.iw, tp.ih, false, true);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
+                    autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    if (w * h > w * l) autouv(buf, x, y, -w, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih);
                     break;
-                case TEX_AUTO:
-                    autouvtri(buf, z, y, l, h, iw, ih, true, true);
-                    autouvtri(buf, z, y, l, h, iw, ih, false, true);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, x, y, w, h, iw, ih);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, true, true);
                     stretchuvtri(buf, false, true);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
                     break;
@@ -1271,26 +1407,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, -1);
             for (int i = 0; i < 3; i ++) buf.norm(0, 0, 1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvx(buf, h + l, h + w, h, -w, iw, ih); // positive x
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduvtri(buf, h + l, h, -l, -h, iw, ih, false, true);
-                    scaleduvtri(buf, h, h + l, l, h, iw, ih, true, true);
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    autouv(buf, z, y, l, h, tp.iw, tp.ih);
+                    if (l * h > w * h) autouv(buf, z, y, -l, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
+                    autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, x, y, -w, h, tp.iw, tp.ih, false, true);
+                    autouvtri(buf, x, y, w, h, tp.iw, tp.ih, true, true);
                     break;
-                case TEX_AUTO:
-                    autouv(buf, z, y, l, h, iw, ih);
-                    if (l * h > w * h) autouv(buf, z, y, l, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    autouvtri(buf, x, y, w, h, iw, ih, false, true);
-                    autouvtri(buf, x, y, w, h, iw, ih, true, true);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, false, true);
                     stretchuvtri(buf, true, true);
                     break;
@@ -1312,26 +1454,32 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
             for (int i = 0; i < 6; i ++) buf.norm(nx, ny, nz);
             for (int i = 0; i < 6; i ++) buf.norm(0, 0, -1);
 
+            x -= dx;
+            y -= dy;
+            z -= dz;
             switch (tex.type) {
-                case TEX_NET:
-                    scaleduvxtri(buf, h, h, -h, w, iw, ih, false, true);
-                    scaleduvxtri(buf, h + l, h + w, h, -w, iw, ih, true, true);
-                    scaleduv(buf, h * 2 + w, h, w, l, iw, ih); // negative y
-                    scaleduv(buf, h, h, w, l, iw, ih); // positive y
-                    scaleduv(buf, h + l, h, -l, -h, iw, ih); // negative z
+                case LIBDRAW_CONST(AUTO_CUBE):
+                case LIBDRAW_CONST(AUTO_PILLAR):
+                case LIBDRAW_CONST(AUTO_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
+                    autouvtri(buf, z, y, l, h, tp.iw, tp.ih, false, true);
+                    autouvtri(buf, z, y, -l, h, tp.iw, tp.ih, true, true);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
+                    autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
+                    if (w * h > w * l) autouv(buf, x, y, -w, h, tp.iw, tp.ih);
+                    else autouv(buf, z, x, -l, w, tp.iw, tp.ih);
+                    autouv(buf, x, y, w, h, tp.iw, tp.ih);
                     break;
-                case TEX_AUTO:
-                    autouvtri(buf, z, y, l, h, iw, ih, false, true);
-                    autouvtri(buf, z, y, l, h, iw, ih, true, true);
-                    autouv(buf, z, x, l, w, iw, ih);
-                    if (w * h > w * l) autouv(buf, x, y, w, h, iw, ih);
-                    else autouv(buf, z, x, l, w, iw, ih);
-                    autouv(buf, x, y, w, h, iw, ih);
-                    break;
-                case TEX_STRETCH:
+                case LIBDRAW_CONST(STRETCH_CUBE):
+                case LIBDRAW_CONST(STRETCH_PILLAR):
+                case LIBDRAW_CONST(STRETCH_SIDED):
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.tspr(buf), tp.tspr(buf);
                     stretchuvtri(buf, false, true);
                     stretchuvtri(buf, true, true);
+                    bindtex(buf, tex.ibottom), tp.use(tex.ibottom), tp.qspr(buf);
                     stretchuv(buf);
+                    bindtex(buf, tex.iside), tp.use(tex.iside), tp.qspr(buf), tp.qspr(buf);
                     stretchuv(buf);
                     stretchuv(buf);
                     break;
@@ -1341,7 +1489,6 @@ static void slant(Buffer& buf, float x, float y, float z, float w, float h, floa
     }
 
     for (int i = 0; i < 24; i ++) buf.col(red, green, blue, alpha);
-    for (int i = 0; i < 24; i ++) buf.spr(u, v, uw, vh);
 }
 
 void ensure2d() {
@@ -1349,6 +1496,7 @@ void ensure2d() {
         mode3d = false;
         glUniform3f(find_uniform("light"), 0, 0, 1);
         glDepthMask(GL_FALSE);
+        glCullFace(GL_FRONT);
     }
 }
 
@@ -1357,6 +1505,7 @@ void ensure3d() {
         mode3d = true;
         glUniform3f(find_uniform("light"), lightx, lighty, lightz);
         glDepthMask(GL_TRUE);
+        glCullFace(GL_BACK);
     }
 }
 
@@ -1425,42 +1574,54 @@ static void step(Buffer& buf, const Step& step) {
         case STEP_CUBE: {
             ensure3d();
             auto& c = step.data.cube;
+            bindtex(buf, c.tex.iside);
             return cube(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.tex);
         }
         case STEP_BOARD: {
             ensure3d();
             auto& b = step.data.board;
+            bindtex(buf, b.img);
             return plane(buf, b.x, b.y, b.z, b.w, b.h, boardh[0], boardh[1], boardh[2], boardv[0], boardv[1], boardv[2], b.img);
         }
         case STEP_SLANT: {
             ensure3d();
             auto& c = step.data.slant;
+            bindtex(buf, c.tex.iside);
             return slant(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.edge, c.tex);
         }
         case STEP_PRISM: {
             ensure3d();
             auto& p = step.data.prism;
+            bindtex(buf, p.tex.iside);
             return prism(buf, p.x, p.y, p.z, p.w, p.h, p.l, p.n, p.axis, p.tex);
         }
         case STEP_CONE: {
             ensure3d();
             auto& c = step.data.cone;
+            bindtex(buf, c.tex.iside);
             return pyramid(buf, c.x, c.y, c.z, c.w, c.h, c.l, c.n, c.dir, c.tex);
         }
         case STEP_HEDRON: {
             ensure3d();
             auto& h = step.data.hedron;
+            bindtex(buf, h.tex.iside);
             return hedron(buf, h.x, h.y, h.z, h.w, h.h, h.l, h.m, h.n, h.tex);
         }
         case STEP_ORTHO: {
             identity(projection);
+            near = -1000, far = 1000;
             ortho(projection, step.data.ortho.w, step.data.ortho.h);
+            glUniform1f(find_uniform("near"), near);
+            glUniform1f(find_uniform("far"), far);
             glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
             return;
         }
         case STEP_FRUSTUM: {
             identity(projection);
+            near = 0.125, far = 1000;
             frustum(projection, step.data.frustum.w, step.data.frustum.h, step.data.frustum.fov);
+            glUniform1f(find_uniform("near"), near);
+            glUniform1f(find_uniform("far"), far);
             glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
             return;
         }
@@ -1522,7 +1683,7 @@ static void step(Buffer& buf, const Step& step) {
         }
         case STEP_RENDER: {
             ensure3d();
-            bindtex(step.data.render.img);
+            bindtex(buf, step.data.render.img);
             drawbuf(findbuf(step.data.render.model));
             return;
         }
@@ -1547,6 +1708,82 @@ static void step(Buffer& buf, const Step& step) {
             float alpha = (c & 255) / 255.0f;
             glUniform4f(find_uniform("fog_color"), red, green, blue, alpha);
             glUniform1f(find_uniform("fog_range"), step.data.fog.range);
+            return;
+        }
+        case STEP_OPACITY: {
+            if (step.data.opacity.opacity == LIBDRAW_CONST(NORMAL_OPACITY)) 
+                glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+            else if (step.data.opacity.opacity == LIBDRAW_CONST(MULTIPLICATIVE_OPACITY)) 
+                glBlendFuncSeparate(GL_ZERO, GL_SRC_COLOR, GL_ZERO, GL_DST_ALPHA);
+            else if (step.data.opacity.opacity == LIBDRAW_CONST(ADDITIVE_OPACITY)) glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            return;
+        }
+        case STEP_UNIFORMI: {
+            Shader sh = active_shader();
+            if (sh != step.data.uniformi.shader) glUseProgram(find_shader(step.data.uniformi.shader));
+            glUniform1i(find_uniform(step.data.uniformi.shader, step.data.uniformi.name), step.data.uniformi.i);
+            delete[] step.data.uniformi.name;
+            if (sh != step.data.uniformi.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_UNIFORMF: {
+            Shader sh = active_shader();
+            if (sh != step.data.uniformf.shader) glUseProgram(find_shader(step.data.uniformf.shader));
+            glUniform1f(find_uniform(step.data.uniformf.shader, step.data.uniformf.name), step.data.uniformf.f);
+            delete[] step.data.uniformf.name;
+            if (sh != step.data.uniformf.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_UNIFORMV2: {
+            Shader sh = active_shader();
+            if (sh != step.data.uniformv2.shader) glUseProgram(find_shader(step.data.uniformv2.shader));
+            glUniform2f(find_uniform(step.data.uniformv2.shader, step.data.uniformv2.name), step.data.uniformv2.x, step.data.uniformv2.y);
+            delete[] step.data.uniformv2.name;
+            if (sh != step.data.uniformv2.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_UNIFORMV3: {
+            Shader sh = active_shader();
+            if (sh != step.data.uniformv3.shader) glUseProgram(find_shader(step.data.uniformv3.shader));
+            glUniform3f(find_uniform(step.data.uniformv3.shader, step.data.uniformv3.name), step.data.uniformv3.x, step.data.uniformv3.y, step.data.uniformv3.z);
+            delete[] step.data.uniformv3.name;
+            if (sh != step.data.uniformv3.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_UNIFORMV4: {
+            Shader sh = active_shader();
+            if (sh != step.data.uniformv4.shader) glUseProgram(find_shader(step.data.uniformv4.shader));
+            glUniform4f(find_uniform(step.data.uniformv4.shader, step.data.uniformv4.name), step.data.uniformv4.x, step.data.uniformv4.y, step.data.uniformv4.z, step.data.uniformv4.w);
+            delete[] step.data.uniformv4.name;
+            if (sh != step.data.uniformv4.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_UNIFORMTEX: {
+            Shader sh = active_shader();
+            GLuint texid = GL_TEXTURE0 + step.data.uniformtex.id;
+            if (texid == GL_TEXTURE0) {
+                fprintf(stderr, "Could not bind uniform %s: Libdraw forbids use of id 0 in texture uniforms.\n", step.data.uniformtex.name);
+                exit(1);
+            }
+            if (texid > GL_TEXTURE31) {
+                fprintf(stderr, "Texture uniform %s with id %d exceeds maximum texture id %d.\n", step.data.uniformtex.name, step.data.uniformtex.id, 31);
+                exit(1);
+            }
+            if (sh != step.data.uniformtex.shader) glUseProgram(find_shader(step.data.uniformtex.shader));
+            glEnable(texid);
+            glActiveTexture(texid);
+            glBindTexture(GL_TEXTURE_2D, findimg(step.data.uniformtex.i).id);
+            glActiveTexture(GL_TEXTURE0);
+            glUniform1i(find_uniform(step.data.uniformtex.shader, step.data.uniformtex.name), step.data.uniformtex.id);
+            delete[] step.data.uniformtex.name;
+            if (sh != step.data.uniformtex.shader) glUseProgram(find_shader(sh));
+            return;
+        }
+        case STEP_SET_LIGHT: {
+            lightx = step.data.set_light.x;
+            lighty = step.data.set_light.y;
+            lightz = step.data.set_light.z;
+            if (mode3d) glUniform3f(find_uniform("light"), lightx, lighty, lightz);
             return;
         }
     }
@@ -1577,6 +1814,13 @@ extern "C" void LIBDRAW_SYMBOL(color)(Color c) {
     Step step;
     step.type = STEP_SET_COLOR;
     step.data.set_color = { c };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(opacity)(Opacity o) {
+    Step step;
+    step.type = STEP_OPACITY;
+    step.data.opacity = { o };
     enqueue(step);
 }
 
@@ -1624,29 +1868,45 @@ extern "C" void LIBDRAW_SYMBOL(font)(Image i) {
 extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str) {
     Step step;
     step.type = STEP_TEXT;
-    step.data.text = { x, y, strdup(str) };
+    char* dup = new char[strlen(str) + 1];
+    memcpy(dup, str, strlen(str) + 1);
+    step.data.text = { x, y, dup };
     enqueue(step);
 }
 
 extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width) {
     Step step;
     step.type = STEP_WRAPPED_TEXT;
-    step.data.wraptext = { x, y, strdup(str), float(width) };
+    char* dup = new char[strlen(str) + 1];
+    memcpy(dup, str, strlen(str) + 1);
+    step.data.wraptext = { x, y, dup, float(width) };
     enqueue(step);
 }
 
 // 3D Drawing
 
-extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img) {
-    return {img, LIBDRAW_CONST(TEX_NET)};
+extern "C" Texture LIBDRAW_SYMBOL(actex)(Image img) {
+    return Texture{ LIBDRAW_CONST(AUTO_CUBE), img, img, img };
 }
 
-extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img) {
-    return {img, LIBDRAW_CONST(TEX_AUTO)};
+extern "C" Texture LIBDRAW_SYMBOL(sctex)(Image img) {
+    return Texture{ LIBDRAW_CONST(STRETCH_CUBE), img, img, img };
 }
 
-extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img) {
-    return {img, LIBDRAW_CONST(TEX_STRETCH)};
+extern "C" Texture LIBDRAW_SYMBOL(aptex)(Image sides, Image ends) {
+    return Texture{ LIBDRAW_CONST(AUTO_PILLAR), sides, ends, ends };
+}
+
+extern "C" Texture LIBDRAW_SYMBOL(sptex)(Image sides, Image ends) {
+    return Texture{ LIBDRAW_CONST(STRETCH_PILLAR), sides, ends, ends };
+}
+
+extern "C" Texture LIBDRAW_SYMBOL(astex)(Image sides, Image top, Image bottom) {
+    return Texture{ LIBDRAW_CONST(AUTO_SIDED), sides, top, bottom };
+}
+
+extern "C" Texture LIBDRAW_SYMBOL(sstex)(Image sides, Image top, Image bottom) {
+    return Texture{ LIBDRAW_CONST(STRETCH_SIDED), sides, top, bottom };
 }
 
 extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float w, float h, float l, Texture img) {
@@ -1813,6 +2073,53 @@ extern "C" void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, f
     enqueue(step);
 }
 
+// Multipass
+
+extern "C" void LIBDRAW_SYMBOL(uniformi)(Shader shader, const char* name, int i) {
+    Step step;
+    step.type = STEP_UNIFORMI;
+    char* dup = new char[strlen(name) + 1];
+    memcpy(dup, name, strlen(name) + 1);
+    step.data.uniformi = { shader, dup, i };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(uniformf)(Shader shader, const char* name, float f) {
+    Step step;
+    step.type = STEP_UNIFORMF;
+    char* dup = new char[strlen(name) + 1];
+    memcpy(dup, name, strlen(name) + 1);
+    step.data.uniformf = { shader, dup, f };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(uniformv2)(Shader shader, const char* name, float x, float y) {
+    Step step;
+    step.type = STEP_UNIFORMV2;
+    char* dup = new char[strlen(name) + 1];
+    memcpy(dup, name, strlen(name) + 1);
+    step.data.uniformv2 = { shader, dup, x, y };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(uniformv3)(Shader shader, const char* name, float x, float y, float z) {
+    Step step;
+    step.type = STEP_UNIFORMV3;
+    char* dup = new char[strlen(name) + 1];
+    memcpy(dup, name, strlen(name) + 1);
+    step.data.uniformv3 = { shader, dup, x, y, z };
+    enqueue(step);
+}
+
+extern "C" void LIBDRAW_SYMBOL(uniformv4)(Shader shader, const char* name, float x, float y, float z, float w) {
+    Step step;
+    step.type = STEP_UNIFORMV4;
+    char* dup = new char[strlen(name) + 1];
+    memcpy(dup, name, strlen(name) + 1);
+    step.data.uniformv4 = { shader, dup, x, y, z, w };
+    enqueue(step);
+}
+
 extern "C" void LIBDRAW_SYMBOL(paint)(Image img) {
     Image i = currentfbo();
     bindfbo(img);
@@ -1876,9 +2183,30 @@ extern "C" void LIBDRAW_SYMBOL(render)(Model model, Image img) {
     enqueue(step);
 }
 
+extern "C" float LIBDRAW_SYMBOL(lightdirx)() {
+    return lightx;
+}
+
+extern "C" float LIBDRAW_SYMBOL(lightdiry)() {
+    return lighty;
+}
+
+extern "C" float LIBDRAW_SYMBOL(lightdirz)() {
+    return lightz;
+}
+
+extern "C" void LIBDRAW_SYMBOL(setlightdir)(float x, float y, float z) {
+    Step step;
+    step.type = STEP_SET_LIGHT;
+    step.data.set_light = { x, y, z };
+    enqueue(step);
+}
+
 void apply_default_uniforms() {
     glUniform1i(find_uniform("width"), width(currentfbo()));
     glUniform1i(find_uniform("height"), height(currentfbo()));
+    glUniform1f(find_uniform("near"), near);
+    glUniform1f(find_uniform("far"), far);
     mode3d ? glUniform3f(find_uniform("light"), lightx, lighty, lightz) : glUniform3f(find_uniform("light"), 0, 0, 1);
     glUniformMatrix4fv(find_uniform("projection"), 1, GL_FALSE, (const GLfloat*)projection);
     glUniformMatrix4fv(find_uniform("view"), 1, GL_FALSE, (const GLfloat*)view);

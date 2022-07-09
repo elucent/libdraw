@@ -60,6 +60,7 @@ namespace internal {
         glGenVertexArrays(1, &vao);
         glBindVertexArray(vao);
         glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
@@ -100,6 +101,7 @@ static void prelude() {
     look(0, 0, 0, 0, 0);
     color(LIBDRAW_CONST(WHITE));
     origin(LIBDRAW_CONST(FRONT_TOP_LEFT));
+    opacity(LIBDRAW_CONST(NORMAL_OPACITY));
 }
 
 extern "C" bool LIBDRAW_SYMBOL(running)() {
@@ -109,6 +111,7 @@ extern "C" bool LIBDRAW_SYMBOL(running)() {
 
     flush(getrendermodel());
     color(WHITE);
+    opacity(LIBDRAW_CONST(NORMAL_OPACITY));
 
     unbindfbo();  
     if (GLenum err = glGetError()) println("Failed to draw frame: ", (int)err), exit(1);

@@ -1,6 +1,7 @@
 #include "fbo.h"
 #include "image.h"
 #include "queue.h"
+#include "shader.h"
 #include "lib/GLAD/glad.h"
 #include "lib/util/vec.h"
 #include "lib/util/io.h"
@@ -50,12 +51,9 @@ void bindfbo(Image image) {
 
     if (activefbo != fbo) {
         activefbo = fbo;
-        // if (UNIFORM_WIDTH == -1) UNIFORM_WIDTH = glGetUniformLocation(shader, "width");
-        // if (UNIFORM_HEIGHT == -1) UNIFORM_HEIGHT = glGetUniformLocation(shader, "height");
         glBindFramebuffer(GL_FRAMEBUFFER, fbo);
         int width = meta->w, height = meta->h;
-        // glUniform1i(UNIFORM_WIDTH, images[image.id].width);
-        // glUniform1i(UNIFORM_HEIGHT, images[image.id].height);
+        apply_default_uniforms();
         glViewport(0, 0, width, height);
         glClearColor(0, 0, 0, 0);
         ensure3d();
@@ -71,14 +69,12 @@ Image currentfbo() {
 void unbindfbo() {
     if (activefbo != 0) {
         activefbo = 0;
-        // if (UNIFORM_WIDTH == -1) UNIFORM_WIDTH = glGetUniformLocation(shader, "width");
-        // if (UNIFORM_HEIGHT == -1) UNIFORM_HEIGHT = glGetUniformLocation(shader, "height");
+        activefboimg = SCREEN;
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glBindRenderbuffer(GL_RENDERBUFFER, 0);
-        // glUniform1i(find_uniform("width"), findimg(0).w);
-        // glUniform1i(find_uniform("height"), findimg(0).h);
+        apply_default_uniforms();
         glViewport(0, 0, findimg(1).w, findimg(1).h); // image 1 is default fbo
-        glClearColor(0, 0, 0, 1);
+        glClearColor(0, 0, 0, 0);
         ensure3d();
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); 
     }

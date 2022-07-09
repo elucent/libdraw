@@ -19,69 +19,89 @@
 #ifndef _LIB_DRAW_H
 #define _LIB_DRAW_H
 
-#ifdef LIBDRAW_NAMESPACE
+#ifdef LIBDRAW_NAMESPACE_VERBOSE
     #define LIBDRAW_SYMBOL(sym) libdraw_##sym
     #define LIBDRAW_CONST(sym) LIBDRAW_##sym
+#elif defined(LIBDRAW_NAMESPACE_BRIEF)
+    #define LIBDRAW_SYMBOL(sym) ld_##sym
+    #define LIBDRAW_CONST(SYM) LD_##sym
 #else
     #define LIBDRAW_SYMBOL(sym) sym
     #define LIBDRAW_CONST(sym) sym
 #endif
 
+#ifdef __cplusplus
+#define CLINKAGE extern "C"  
+#else
+#define CLINKAGE
+#endif
+
 // Windows
 
-extern "C" void LIBDRAW_SYMBOL(window)(int width, int height, const char* title);
-extern "C" bool LIBDRAW_SYMBOL(running)();
-extern "C" int LIBDRAW_SYMBOL(frames)();
-extern "C" double LIBDRAW_SYMBOL(seconds)();
+CLINKAGE void LIBDRAW_SYMBOL(window)(int width, int height, const char* title);
+CLINKAGE bool LIBDRAW_SYMBOL(running)();
+CLINKAGE int LIBDRAW_SYMBOL(frames)();
+CLINKAGE double LIBDRAW_SYMBOL(seconds)();
 
 // Images
 
 using Image = int;
-extern "C" Image LIBDRAW_SYMBOL(image)(const char* path);
-extern "C" Image LIBDRAW_SYMBOL(newimage)(int width, int height);
-extern "C" Image LIBDRAW_SYMBOL(subimage)(Image i, int x, int y, int width, int height);
-extern "C" int LIBDRAW_SYMBOL(width)(Image i);
-extern "C" int LIBDRAW_SYMBOL(height)(Image i);
-extern "C" Image LIBDRAW_CONST(SCREEN);
-extern "C" Image LIBDRAW_CONST(BLANK);
+CLINKAGE Image LIBDRAW_SYMBOL(image)(const char* path);
+CLINKAGE Image LIBDRAW_SYMBOL(newimage)(int width, int height);
+CLINKAGE Image LIBDRAW_SYMBOL(subimage)(Image i, int x, int y, int width, int height);
+CLINKAGE void LIBDRAW_SYMBOL(saveimage)(Image i, const char* path);
+CLINKAGE int LIBDRAW_SYMBOL(width)(Image i);
+CLINKAGE int LIBDRAW_SYMBOL(height)(Image i);
+CLINKAGE Image LIBDRAW_CONST(SCREEN);
+CLINKAGE Image LIBDRAW_CONST(BLANK);
 
 enum TextureType {
-    LIBDRAW_CONST(TEX_NET),
-    LIBDRAW_CONST(TEX_AUTO),
-    LIBDRAW_CONST(TEX_STRETCH)
+    LIBDRAW_CONST(AUTO_CUBE), LIBDRAW_CONST(STRETCH_CUBE),
+    LIBDRAW_CONST(AUTO_PILLAR), LIBDRAW_CONST(STRETCH_PILLAR),
+    LIBDRAW_CONST(AUTO_SIDED), LIBDRAW_CONST(STRETCH_SIDED)
 };
 
 struct Texture {
-    Image img : 28;
-    Image img2 : 28;
-    TextureType type : 8;
+    TextureType type;
+    Image iside, itop, ibottom;
 };
 
-extern "C" Texture LIBDRAW_SYMBOL(nettex)(Image img);
-extern "C" Texture LIBDRAW_SYMBOL(autotex)(Image img);
-extern "C" Texture LIBDRAW_SYMBOL(stretchtex)(Image img);
+CLINKAGE Texture LIBDRAW_SYMBOL(actex)(Image all);
+CLINKAGE Texture LIBDRAW_SYMBOL(sctex)(Image all);
+CLINKAGE Texture LIBDRAW_SYMBOL(aptex)(Image sides, Image ends);
+CLINKAGE Texture LIBDRAW_SYMBOL(sptex)(Image sides, Image ends);
+CLINKAGE Texture LIBDRAW_SYMBOL(astex)(Image sides, Image top, Image bottom);
+CLINKAGE Texture LIBDRAW_SYMBOL(sstex)(Image sides, Image top, Image bottom);
 
 // Colors
 
 using Color = int;
-extern "C" const Color
+CLINKAGE const Color
     LIBDRAW_CONST(RED), LIBDRAW_CONST(ORANGE), LIBDRAW_CONST(YELLOW), LIBDRAW_CONST(LIME), 
     LIBDRAW_CONST(GREEN), LIBDRAW_CONST(CYAN), LIBDRAW_CONST(BLUE), LIBDRAW_CONST(INDIGO), 
     LIBDRAW_CONST(PURPLE), LIBDRAW_CONST(MAGENTA), LIBDRAW_CONST(PINK), LIBDRAW_CONST(BROWN), 
     LIBDRAW_CONST(WHITE), LIBDRAW_CONST(GRAY), LIBDRAW_CONST(BLACK), LIBDRAW_CONST(CLEAR);
-extern "C" Color LIBDRAW_SYMBOL(rgba)(int red, int green, int blue, int alpha);
-extern "C" Color LIBDRAW_SYMBOL(rgb)(int red, int green, int blue);
-extern "C" void LIBDRAW_SYMBOL(color)(Color c);
+CLINKAGE Color LIBDRAW_SYMBOL(rgba)(int red, int green, int blue, int alpha);
+CLINKAGE Color LIBDRAW_SYMBOL(rgb)(int red, int green, int blue);
+CLINKAGE void LIBDRAW_SYMBOL(color)(Color c);
+
+enum Opacity {
+    LIBDRAW_CONST(NORMAL_OPACITY) = 0,
+    LIBDRAW_CONST(MULTIPLICATIVE_OPACITY) = 1,
+    LIBDRAW_CONST(ADDITIVE_OPACITY) = 2
+};
+
+CLINKAGE void LIBDRAW_SYMBOL(opacity)(Opacity o);
 
 // 2D Drawing
 
-extern "C" void LIBDRAW_SYMBOL(rect)(float x, float y, float width, float height);
-extern "C" void LIBDRAW_SYMBOL(polygon)(float x, float y, float radius, int sides);
-extern "C" void LIBDRAW_SYMBOL(circle)(float x, float y, float radius);
-extern "C" void LIBDRAW_SYMBOL(sprite)(float x, float y, Image i);
-extern "C" void LIBDRAW_SYMBOL(font)(Image i);
-extern "C" void LIBDRAW_SYMBOL(text)(float x, float y, const char* str);
-extern "C" void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width);
+CLINKAGE void LIBDRAW_SYMBOL(rect)(float x, float y, float width, float height);
+CLINKAGE void LIBDRAW_SYMBOL(polygon)(float x, float y, float radius, int sides);
+CLINKAGE void LIBDRAW_SYMBOL(circle)(float x, float y, float radius);
+CLINKAGE void LIBDRAW_SYMBOL(sprite)(float x, float y, Image i);
+CLINKAGE void LIBDRAW_SYMBOL(font)(Image i);
+CLINKAGE void LIBDRAW_SYMBOL(text)(float x, float y, const char* str);
+CLINKAGE void LIBDRAW_SYMBOL(wraptext)(float x, float y, const char* str, int width);
 
 // Transformation
 
@@ -145,61 +165,72 @@ enum Edge {
     LIBDRAW_CONST(BOTTOM_FRONT_EDGE) = 11
 };
 
-extern "C" void LIBDRAW_SYMBOL(origin)(Origin origin);
-extern "C" void LIBDRAW_SYMBOL(rotate)(float degrees, Axis axis);
-extern "C" void LIBDRAW_SYMBOL(translate)(float dx, float dy, float dz);
-extern "C" void LIBDRAW_SYMBOL(scale)(float factor);
-extern "C" void LIBDRAW_SYMBOL(scale2d)(float x, float y);
-extern "C" void LIBDRAW_SYMBOL(scale3d)(float x, float y, float z);
-extern "C" void LIBDRAW_SYMBOL(beginstate)();
-extern "C" void LIBDRAW_SYMBOL(endstate)();
+CLINKAGE void LIBDRAW_SYMBOL(origin)(Origin origin);
+CLINKAGE void LIBDRAW_SYMBOL(rotate)(float degrees, Axis axis);
+CLINKAGE void LIBDRAW_SYMBOL(translate)(float dx, float dy, float dz);
+CLINKAGE void LIBDRAW_SYMBOL(scale)(float factor);
+CLINKAGE void LIBDRAW_SYMBOL(scale2d)(float x, float y);
+CLINKAGE void LIBDRAW_SYMBOL(scale3d)(float x, float y, float z);
+CLINKAGE void LIBDRAW_SYMBOL(beginstate)();
+CLINKAGE void LIBDRAW_SYMBOL(endstate)();
 
 // 3D Drawing
 
-extern "C" void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float width, float height, float length, Texture img);
-extern "C" void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image i);
-extern "C" void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float width, float height, float length, Edge edge, Texture img);
-extern "C" void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float width, float height, float length, int sides, Axis axis, Texture img);
-extern "C" void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float width, float height, float length, Axis axis, Texture img);
-extern "C" void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float width, float height, float length, int sides, Direction dir, Texture img);
-extern "C" void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float width, float height, float length, Direction dir, Texture img);
-extern "C" void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float width, float height, float length, int hsides, int vsides, Texture img);
-extern "C" void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float width, float height, float length, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(cube)(float x, float y, float z, float width, float height, float length, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(board)(float x, float y, float z, Image i);
+CLINKAGE void LIBDRAW_SYMBOL(slant)(float x, float y, float z, float width, float height, float length, Edge edge, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(prism)(float x, float y, float z, float width, float height, float length, int sides, Axis axis, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(cylinder)(float x, float y, float z, float width, float height, float length, Axis axis, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(pyramid)(float x, float y, float z, float width, float height, float length, int sides, Direction dir, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(cone)(float x, float y, float z, float width, float height, float length, Direction dir, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(hedron)(float x, float y, float z, float width, float height, float length, int hsides, int vsides, Texture img);
+CLINKAGE void LIBDRAW_SYMBOL(sphere)(float x, float y, float z, float width, float height, float length, Texture img);
+CLINKAGE float LIBDRAW_SYMBOL(lightdirx)();
+CLINKAGE float LIBDRAW_SYMBOL(lightdiry)();
+CLINKAGE float LIBDRAW_SYMBOL(lightdirz)();
+CLINKAGE void LIBDRAW_SYMBOL(setlightdir)(float x, float y, float z);
 
 // Camera
 
-extern "C" void LIBDRAW_SYMBOL(ortho)(float width, float height);
-extern "C" void LIBDRAW_SYMBOL(frustum)(float width, float height, float fov);
-extern "C" void LIBDRAW_SYMBOL(pan)(float x, float y, float z);
-extern "C" void LIBDRAW_SYMBOL(tilt)(float degrees, Axis axis);
-extern "C" void LIBDRAW_SYMBOL(snap)(float x, float y, float z);
-extern "C" void LIBDRAW_SYMBOL(look)(float x, float y, float z, float yaw, float pitch);
-extern "C" void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, float y2, float z2);
+CLINKAGE void LIBDRAW_SYMBOL(ortho)(float width, float height);
+CLINKAGE void LIBDRAW_SYMBOL(frustum)(float width, float height, float fov);
+CLINKAGE void LIBDRAW_SYMBOL(pan)(float x, float y, float z);
+CLINKAGE void LIBDRAW_SYMBOL(tilt)(float degrees, Axis axis);
+CLINKAGE void LIBDRAW_SYMBOL(snap)(float x, float y, float z);
+CLINKAGE void LIBDRAW_SYMBOL(look)(float x, float y, float z, float yaw, float pitch);
+CLINKAGE void LIBDRAW_SYMBOL(lookat)(float x1, float y1, float z1, float x2, float y2, float z2);
 
 // Models
 
 using Model = int;
 
-extern "C" Model LIBDRAW_SYMBOL(createmodel)();
-extern "C" Model LIBDRAW_SYMBOL(sketch)();
-extern "C" void LIBDRAW_SYMBOL(sketchto)(Model model);
-extern "C" void LIBDRAW_SYMBOL(flush)();
-// TODO : extern "C" Model LIBDRAW_SYMBOL(loadobj)(const char* path);
-extern "C" void LIBDRAW_SYMBOL(render)(Model model, Image img);
+CLINKAGE Model LIBDRAW_SYMBOL(createmodel)();
+CLINKAGE Model LIBDRAW_SYMBOL(sketch)();
+CLINKAGE void LIBDRAW_SYMBOL(sketchto)(Model model);
+CLINKAGE void LIBDRAW_SYMBOL(flush)();
+// TODO : CLINKAGE Model LIBDRAW_SYMBOL(loadobj)(const char* path);
+CLINKAGE void LIBDRAW_SYMBOL(render)(Model model, Image img);
 
 // Effects
 
 using Shader = int;
 
-extern "C" const char* LIBDRAW_CONST(DEFAULT_VSH);
-extern "C" const char* LIBDRAW_CONST(DEFAULT_FSH);
-extern "C" Shader LIBDRAW_CONST(DEFAULT_SHADER);
+CLINKAGE const char* LIBDRAW_CONST(DEFAULT_VSH);
+CLINKAGE const char* LIBDRAW_CONST(DEFAULT_FSH);
+CLINKAGE Shader LIBDRAW_CONST(DEFAULT_SHADER);
 
-extern "C" Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
-extern "C" void LIBDRAW_SYMBOL(paint)(Image img);
-extern "C" void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);
-extern "C" void LIBDRAW_SYMBOL(fog)(Color color, float range);
-extern "C" void LIBDRAW_SYMBOL(nofog)();
+CLINKAGE Shader LIBDRAW_SYMBOL(shader)(const char* vsh, const char* fsh);
+CLINKAGE void LIBDRAW_SYMBOL(paint)(Image img);
+CLINKAGE void LIBDRAW_SYMBOL(shade)(Image img, Shader shader);
+CLINKAGE void LIBDRAW_SYMBOL(fog)(Color color, float range);
+CLINKAGE void LIBDRAW_SYMBOL(nofog)();
+
+CLINKAGE void LIBDRAW_SYMBOL(uniformi)(Shader shader, const char* name, int i);
+CLINKAGE void LIBDRAW_SYMBOL(uniformf)(Shader shader, const char* name, float f);
+CLINKAGE void LIBDRAW_SYMBOL(uniformv2)(Shader shader, const char* name, float x, float y);
+CLINKAGE void LIBDRAW_SYMBOL(uniformv3)(Shader shader, const char* name, float x, float y, float z);
+CLINKAGE void LIBDRAW_SYMBOL(uniformv4)(Shader shader, const char* name, float x, float y, float z, float w);
+CLINKAGE void LIBDRAW_SYMBOL(uniformtex)(Shader shader, const char* name, int i, Image tex);
 
 // Input
 
@@ -208,15 +239,15 @@ enum MouseButton {
     LIBDRAW_CONST(RIGHT_CLICK) = 1
 };
 
-extern "C" bool LIBDRAW_SYMBOL(keytap)(const char* key);
-extern "C" bool LIBDRAW_SYMBOL(keydown)(const char* key);
-extern "C" bool LIBDRAW_SYMBOL(mousetap)(MouseButton button);
-extern "C" bool LIBDRAW_SYMBOL(mousedown)(MouseButton button);
-extern "C" float LIBDRAW_SYMBOL(mousex)();
-extern "C" float LIBDRAW_SYMBOL(mousey)();
-extern "C" float LIBDRAW_SYMBOL(scroll)();
-extern "C" void LIBDRAW_SYMBOL(setmouse)(float x, float y);
-extern "C" void LIBDRAW_SYMBOL(hidemouse)();
-extern "C" void LIBDRAW_SYMBOL(showmouse)();
+CLINKAGE bool LIBDRAW_SYMBOL(keytap)(const char* key);
+CLINKAGE bool LIBDRAW_SYMBOL(keydown)(const char* key);
+CLINKAGE bool LIBDRAW_SYMBOL(mousetap)(MouseButton button);
+CLINKAGE bool LIBDRAW_SYMBOL(mousedown)(MouseButton button);
+CLINKAGE float LIBDRAW_SYMBOL(mousex)();
+CLINKAGE float LIBDRAW_SYMBOL(mousey)();
+CLINKAGE float LIBDRAW_SYMBOL(scroll)();
+CLINKAGE void LIBDRAW_SYMBOL(setmouse)(float x, float y);
+CLINKAGE void LIBDRAW_SYMBOL(hidemouse)();
+CLINKAGE void LIBDRAW_SYMBOL(showmouse)();
 
 #endif

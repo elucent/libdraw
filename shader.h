@@ -7,6 +7,7 @@
 
 GLuint find_shader(Shader shader);
 void init_shaders();
+GLint find_uniform(Shader shader, const string& name);
 GLint find_uniform(const string& name);
 Shader active_shader();
 void bind(Shader shader);
